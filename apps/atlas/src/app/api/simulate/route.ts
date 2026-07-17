@@ -41,7 +41,7 @@ export async function GET(req: Request) {
           });
         } else {
           // Legacy / demo: full auto pipeline
-          await runPipeline(send, { replay: replay || true });
+          await runPipeline(send, { replay });
         }
       } catch (err) {
         send({

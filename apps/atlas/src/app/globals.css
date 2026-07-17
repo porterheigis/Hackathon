@@ -2,16 +2,16 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 @theme {
-  --color-atlas-bg: #0b0b0d;
+  --color-atlas-bg: #0a0e14;
   --color-atlas-surface: rgba(255, 255, 255, 0.03);
-  --color-atlas-border: rgba(255, 255, 255, 0.08);
-  --color-atlas-hairline: rgba(255, 255, 255, 0.08);
-  --color-atlas-accent: #0a84ff;
-  --color-atlas-cyan: #0a84ff;
-  --color-atlas-amber: #ff9f0a;
-  --color-atlas-red: #ff453a;
-  --color-atlas-green: #30d158;
-  --color-atlas-muted: rgba(255, 255, 255, 0.3);
+  --color-atlas-border: #1c2430;
+  --color-atlas-hairline: #1c2430;
+  --color-atlas-accent: #39d3f5;
+  --color-atlas-cyan: #39d3f5;
+  --color-atlas-amber: #ffb454;
+  --color-atlas-red: #ff5c5c;
+  --color-atlas-green: #2fd682;
+  --color-atlas-muted: rgba(255, 255, 255, 0.35);
   --color-atlas-dim: rgba(255, 255, 255, 0.55);
   --color-atlas-text: rgba(255, 255, 255, 0.9);
   --color-atlas-bright: #ffffff;
@@ -22,13 +22,14 @@
 html,
 body {
   height: 100%;
-  background: #0b0b0d;
+  background: #0a0e14;
   color: rgba(255, 255, 255, 0.9);
   font-family: var(--font-sans);
   font-size: 13px;
   letter-spacing: -0.01em;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 .font-mono {
@@ -47,7 +48,7 @@ body {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid #1c2430;
   border-radius: 10px;
 }
 
@@ -56,19 +57,19 @@ body {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .btn-primary {
-  background: #0a84ff;
-  color: #fff;
+  background: #39d3f5;
+  color: #0a0e14;
   border-radius: 8px;
   font-weight: 500;
   transition: transform 150ms ease-out, opacity 150ms ease-out, background 150ms ease-out;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #0070e0;
+  background: #5ddcf7;
 }
 
 .btn-primary:active:not(:disabled) {
@@ -80,10 +81,15 @@ body {
   cursor: not-allowed;
 }
 
+.btn-primary:focus-visible {
+  outline: 2px solid #39d3f5;
+  outline-offset: 2px;
+}
+
 .btn-secondary {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid #1c2430;
   border-radius: 8px;
   font-weight: 500;
   transition: transform 150ms ease-out, background 150ms ease-out;
@@ -97,23 +103,38 @@ body {
   transform: scale(0.98);
 }
 
+.btn-secondary:focus-visible {
+  outline: 2px solid #39d3f5;
+  outline-offset: 2px;
+}
+
 .pill {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid #1c2430;
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.55);
   transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
 }
 
-.pill:hover {
+.pill:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
 }
 
+.pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pill:focus-visible {
+  outline: 2px solid #39d3f5;
+  outline-offset: 2px;
+}
+
 .pill-active {
-  background: rgba(10, 132, 255, 0.15);
-  border-color: rgba(10, 132, 255, 0.4);
-  color: #0a84ff;
+  background: rgba(57, 211, 245, 0.15);
+  border-color: rgba(57, 211, 245, 0.4);
+  color: #39d3f5;
 }
 
 .input-hero {
@@ -121,7 +142,7 @@ body {
   width: 100%;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #1c2430;
   color: rgba(255, 255, 255, 0.9);
   padding: 0 16px;
   font-size: 15px;
@@ -130,12 +151,12 @@ body {
 }
 
 .input-hero::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .input-hero:focus {
-  border-color: rgba(10, 132, 255, 0.6);
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
+  border-color: rgba(57, 211, 245, 0.6);
+  box-shadow: 0 0 0 3px rgba(57, 211, 245, 0.22);
 }
 
 .deny-pulse {
@@ -144,10 +165,10 @@ body {
 
 @keyframes denyPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.45);
+    box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.45);
   }
   100% {
-    box-shadow: 0 0 0 12px rgba(255, 69, 58, 0);
+    box-shadow: 0 0 0 12px rgba(255, 92, 92, 0);
   }
 }
 
@@ -172,7 +193,7 @@ body {
 }
 
 .ticker-chip {
-  background: rgba(11, 11, 13, 0.75);
+  background: rgba(10, 14, 20, 0.8);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
@@ -182,6 +203,36 @@ body {
   white-space: nowrap;
 }
 
+.ticker-chip-enter {
+  animation: tickerIn 180ms ease-out;
+}
+
+@keyframes tickerIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.scrollbar-atlas {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.scrollbar-atlas::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-atlas::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
 .maplibregl-ctrl-attrib {
   font-size: 9px !important;
   opacity: 0.5;
@@ -189,4 +240,14 @@ body {
 
 .maplibregl-ctrl-logo {
   opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

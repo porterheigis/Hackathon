@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
-import { sampleAssetPosition } from "@/lib/timeline";
+import { makeAssetMesh } from "@/lib/globe-glyphs";
+import {
+  sampleAssetHeading,
+  sampleAssetOpacity,
+  sampleAssetPosition,
+  sampleCamera,
+} from "@/lib/timeline";
 import type {
   PipelineStage,
   PriceTicker,
@@ -40,6 +46,7 @@ interface ArcDatum {
   dashGap: number;
   dashTime: number;
   altitude: number;
+  dashInitialGap: number;
 }
 
 interface PointDatum {
@@ -57,9 +64,11 @@ interface RingDatum {
   maxR: number;
   propagationSpeed: number;
   repeatPeriod: number;
+  color: string;
 }
 
 interface HtmlDatum {
+  id: string;
   lat: number;
   lng: number;
   label: string;
@@ -73,58 +82,43 @@ interface ObjectDatum {
   alt: number;
   kind: TimelineAsset["kind"];
   label: string;
+  heading: number;
+  opacity: number;
 }
 
 const BLUE_MARBLE =
-  "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
+  "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
 const TOPOLOGY =
-  "//unpkg.com/three-globe/example/img/earth-topology.png";
+  "https://unpkg.com/three-globe/example/img/earth-topology.png";
 
-function makeGlyph(kind: TimelineAsset["kind"]): object {
-  // Lazy-require three so Next build doesn't stall on the three graph
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const THREE = require("three") as typeof import("three");
-  let mesh;
-  if (kind === "plane") {
-    mesh = new THREE.Mesh(
-      new THREE.ConeGeometry(0.35, 1.2, 4),
-      new THREE.MeshLambertMaterial({
-        color: "#0a84ff",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
-    mesh.rotation.x = Math.PI / 2;
-  } else if (kind === "military") {
-    mesh = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.45, 0),
-      new THREE.MeshLambertMaterial({
-        color: "#ff453a",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
-  } else if (kind === "tanker") {
-    mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.2, 1.1),
-      new THREE.MeshLambertMaterial({
-        color: "#ff9f0a",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
-  } else {
-    mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.16, 0.85),
-      new THREE.MeshLambertMaterial({
-        color: "#ffffff",
-        transparent: true,
-        opacity: 0.85,
-      })
-    );
-  }
-  mesh.scale.setScalar(0.55);
-  return mesh;
+const AMBER = "#ffb454";
+const RED = "#ff5c5c";
+const GREEN = "#2fd682";
+const BG = "#0a0e14";
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function revealCount(t: number, total: number): number {
+  if (total <= 0) return 0;
+  // Soft cascade: reveal over first 45% of playback
+  const u = smoothstep(0.02, 0.45, t);
+  return Math.max(1, Math.ceil(u * total));
+}
+
+function nodeRevealWeight(
+  id: string,
+  order: string[],
+  t: number,
+  epicenter: string | null
+): number {
+  if (id === epicenter) return 1;
+  const idx = order.indexOf(id);
+  if (idx < 0) return 0;
+  const start = 0.02 + (idx / Math.max(order.length, 1)) * 0.4;
+  return smoothstep(start, start + 0.08, t);
 }
 
 export default function GlobeView({
@@ -147,27 +141,93 @@ export default function GlobeView({
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 600, h: 600 });
   const [propStep, setPropStep] = useState(0);
-  const lastCamMode = useRef<string | null>(null);
+  const [globeReady, setGlobeReady] = useState(false);
+  const tickerEls = useRef(new Map<string, HTMLDivElement>());
+  const autoRotateRamp = useRef(0.25);
+  const lastCamKey = useRef("");
+  const playingRef = useRef(playing);
+  const timelineRef = useRef(timeline);
+  const epicenterRef = useRef(epicenter);
+  const playbackTRef = useRef(playbackT);
+  const visibleRef = useRef(visible);
 
+  playingRef.current = playing;
+  timelineRef.current = timeline;
+  epicenterRef.current = epicenter;
+  playbackTRef.current = playbackT;
+  visibleRef.current = visible;
+
+  // Debounced resize
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const apply = (width: number, height: number) => {
+      setDims({ w: Math.max(200, width), h: Math.max(200, height) });
+    };
+    apply(el.clientWidth, el.clientHeight);
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      setDims({ w: Math.max(200, width), h: Math.max(200, height) });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => apply(width, height), 120);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (timer) clearTimeout(timer);
+      ro.disconnect();
+    };
   }, []);
 
+  // Pixel ratio + damping once ready
   useEffect(() => {
+    if (!globeReady) return;
     const g = globeRef.current;
     if (!g) return;
-    g.controls().autoRotate = stage === "IDLE" && !playing;
-    g.controls().autoRotateSpeed = 0.25;
+    try {
+      const renderer = g.renderer();
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    } catch {
+      /* */
+    }
     g.controls().enableDamping = true;
-  }, [stage, playing]);
+    g.controls().dampingFactor = 0.08;
+  }, [globeReady]);
 
+  // Auto-rotate ramp down when leaving idle
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady) return;
+    const wantIdle = stage === "IDLE" && !playing;
+    if (wantIdle) {
+      autoRotateRamp.current = 0.25;
+      g.controls().autoRotate = true;
+      g.controls().autoRotateSpeed = 0.25;
+      return;
+    }
+    // Ramp down over ~300ms
+    const start = performance.now();
+    const from = autoRotateRamp.current;
+    let raf = 0;
+    const step = (now: number) => {
+      const u = Math.min(1, (now - start) / 300);
+      const speed = from * (1 - u);
+      autoRotateRamp.current = speed;
+      const globe = globeRef.current;
+      if (!globe) return;
+      if (speed < 0.01) {
+        globe.controls().autoRotate = false;
+        globe.controls().autoRotateSpeed = 0;
+        return;
+      }
+      globe.controls().autoRotate = true;
+      globe.controls().autoRotateSpeed = speed;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [stage, playing, globeReady]);
+
+  // Non-playback cascade reveal
   useEffect(() => {
     if (playing && playbackT != null) return;
     if (stage !== "SIMULATE" && stage !== "MODEL" && stage !== "PROPOSE") {
@@ -194,20 +254,20 @@ export default function GlobeView({
   }, [worldModel]);
 
   const t = playing && playbackT != null ? playbackT : null;
+  const order = propagationOrder.length ? propagationOrder : affectedNodes;
 
   const visibleNodes = useMemo(() => {
     if (t != null && timeline) {
-      const order = propagationOrder.length ? propagationOrder : affectedNodes;
-      const n = Math.max(1, Math.floor(t * Math.max(order.length, 1)));
+      const n = revealCount(t, Math.max(order.length, 1));
       return new Set(order.slice(0, n));
     }
-    if (!propagationOrder.length && !affectedNodes.length)
-      return new Set<string>();
-    const order = propagationOrder.length ? propagationOrder : affectedNodes;
+    if (!order.length) return new Set<string>();
     return new Set(order.slice(0, Math.max(1, propStep)));
-  }, [propagationOrder, affectedNodes, propStep, t, timeline]);
+  }, [order, propStep, t, timeline]);
 
-  const laneFrozen = t != null ? t >= 0.05 : true;
+  const laneFrozen = t != null ? t >= 0.05 : stage !== "IDLE";
+  const rerouteMix =
+    t != null ? smoothstep(0.42, 0.52, t) : stage === "PROPOSE" ? 1 : 0;
   const wantsAir = selectedOutcomes.includes("air_travel");
   const airThinning =
     wantsAir &&
@@ -221,42 +281,84 @@ export default function GlobeView({
     return worldModel.nodes
       .filter(
         (n) =>
-          n.type === "chokepoint" || n.type === "port" || n.type === "hub"
+          n.type === "chokepoint" ||
+          n.type === "port" ||
+          n.type === "hub" ||
+          n.type === "refinery"
       )
       .map((n) => {
-        const hit = visibleNodes.has(n.id) || n.id === epicenter;
         const isEpi = n.id === epicenter;
+        let weight = 0;
+        if (t != null) {
+          weight = nodeRevealWeight(n.id, order, t, epicenter);
+        } else {
+          weight = visibleNodes.has(n.id) || isEpi ? 1 : 0;
+        }
+        const size = isEpi
+          ? 0.55
+          : 0.12 + weight * 0.22;
+        const color = isEpi
+          ? RED
+          : weight > 0.5
+            ? AMBER
+            : weight > 0
+              ? `rgba(255,180,84,${0.35 + weight * 0.5})`
+              : "rgba(255,255,255,0.22)";
         return {
           id: n.id,
           lat: n.lat,
           lng: n.lng,
-          size: isEpi ? 0.55 : hit ? 0.32 : 0.12,
-          color: isEpi ? "#ff453a" : hit ? "#ff9f0a" : "rgba(255,255,255,0.25)",
+          size,
+          color,
           label: n.name,
         };
       });
-  }, [worldModel, visibleNodes, epicenter]);
+  }, [worldModel, visibleNodes, epicenter, t, order]);
 
   const objectsData: ObjectDatum[] = useMemo(() => {
-    if (!timeline || t == null) return [];
+    if (!timeline || t == null || !visible) return [];
     const out: ObjectDatum[] = [];
     for (const asset of timeline.assets) {
+      const opacity = sampleAssetOpacity(asset, t);
+      if (opacity <= 0) continue;
       const pos = sampleAssetPosition(asset, t);
       if (!pos) continue;
       out.push({
         id: asset.id,
         lat: pos.lat,
         lng: pos.lng,
-        alt: pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.01),
+        alt: pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.012),
         kind: asset.kind,
         label: asset.label ?? asset.kind,
+        heading: sampleAssetHeading(asset, t),
+        opacity,
       });
     }
     return out;
-  }, [timeline, t]);
+  }, [timeline, t, visible]);
 
   const objectThreeObject = useCallback((d: object) => {
-    return makeGlyph((d as ObjectDatum).kind);
+    const data = d as ObjectDatum;
+    const mesh = makeAssetMesh(data.kind) as {
+      traverse?: (fn: (o: { material?: { opacity: number; transparent: boolean } }) => void) => void;
+      rotation?: { y: number };
+      material?: { opacity: number; transparent: boolean };
+    };
+    const applyOpacity = (opacity: number) => {
+      if (mesh.traverse) {
+        mesh.traverse((o) => {
+          if (o.material) {
+            o.material.transparent = true;
+            o.material.opacity = opacity;
+          }
+        });
+      } else if (mesh.material) {
+        mesh.material.transparent = true;
+        mesh.material.opacity = opacity;
+      }
+    };
+    applyOpacity(data.opacity);
+    return mesh;
   }, []);
 
   const arcs: ArcDatum[] = useMemo(() => {
@@ -273,38 +375,61 @@ export default function GlobeView({
           (visibleNodes.has(e.from) || visibleNodes.has(e.to) || disrupted);
         const traffic = e.traffic ?? 0.5;
         const frozen = disrupted && hot && laneFrozen;
-        const showReroute =
-          playing && t != null && t >= 0.44 && disrupted && hot;
+
+        // Grow-in: cold arcs start with gap; hot arcs fill
+        let dashInitialGap = hot ? 0 : 0.35;
+        if (t != null && hot) {
+          const edgeIdx = Math.max(
+            order.indexOf(e.from),
+            order.indexOf(e.to),
+            0
+          );
+          const start = 0.04 + (edgeIdx / Math.max(order.length, 1)) * 0.35;
+          dashInitialGap = 1 - smoothstep(start, start + 0.1, t);
+        }
 
         let color: string[] = [
-          "rgba(255,255,255,0.08)",
-          "rgba(255,255,255,0.08)",
+          "rgba(255,255,255,0.07)",
+          "rgba(255,255,255,0.07)",
         ];
         let stroke = isAir ? 0.25 : 0.35;
         let dashTime =
           stage === "IDLE" && !playing ? 0 : isAir ? 1800 : 2800;
         let altitude = isAir ? 0.25 : 0.12;
 
-        if (showReroute) {
-          altitude = isAir ? 0.35 : 0.22;
-          color = ["rgba(48,209,88,0.35)", "rgba(48,209,88,0.7)"];
-          stroke = 0.9;
-          dashTime = 2200;
+        if (hot && rerouteMix > 0) {
+          const g = rerouteMix;
+          altitude = isAir
+            ? 0.25 + g * 0.1
+            : 0.12 + g * 0.1;
+          color = [
+            `rgba(47,214,130,${0.25 + g * 0.2})`,
+            `rgba(47,214,130,${0.45 + g * 0.35})`,
+          ];
+          stroke = 0.5 + g * 0.45;
+          dashTime = Math.round(2800 - g * 600);
         } else if (hot) {
           if (isAir && airThinning) {
-            color = ["rgba(10,132,255,0.15)", "rgba(10,132,255,0.35)"];
-            stroke = 0.15;
+            color = [
+              `rgba(57,211,245,0.18)`,
+              `rgba(57,211,245,0.4)`,
+            ];
+            stroke = 0.18;
             dashTime = 4000;
           } else if (frozen) {
-            color = ["#ff453a", "#ff9f0a"];
-            stroke = 1.4;
-            dashTime = 0;
+            // Frozen: slow dash rather than hard stop
+            color = [RED, AMBER];
+            stroke = 1.35;
+            dashTime = 12000;
           } else {
-            color = ["#ff9f0a", "#ff453a"];
-            stroke = 1.1;
+            color = [AMBER, RED];
+            stroke = 1.05;
           }
         } else if (isAir) {
-          color = ["rgba(10,132,255,0.12)", "rgba(10,132,255,0.2)"];
+          color = [
+            "rgba(57,211,245,0.1)",
+            "rgba(57,211,245,0.18)",
+          ];
         }
 
         return {
@@ -319,6 +444,7 @@ export default function GlobeView({
           dashGap: isAir ? 0.08 : 0.2,
           dashTime,
           altitude,
+          dashInitialGap,
         };
       })
       .filter(Boolean) as ArcDatum[];
@@ -333,14 +459,18 @@ export default function GlobeView({
     laneFrozen,
     playing,
     t,
+    rerouteMix,
+    order,
   ]);
 
   const rings: RingDatum[] = useMemo(() => {
     if (!epicenter || !nodeMap.has(epicenter)) return [];
     if (stage === "IDLE" && !playing) return [];
     const n = nodeMap.get(epicenter)!;
-    const active = playing ? (t ?? 0) < 0.5 : true;
-    if (!active && playing) return [];
+    const ringT = t ?? 0.2;
+    if (playing && ringT >= 0.55) return [];
+    const fade = playing ? 1 - smoothstep(0.35, 0.55, ringT) : 1;
+    if (fade <= 0.05) return [];
     return [
       {
         lat: n.lat,
@@ -348,23 +478,27 @@ export default function GlobeView({
         maxR: 3.5,
         propagationSpeed: 2.2,
         repeatPeriod: 1400,
+        color: `rgba(255,92,92,${0.65 * fade})`,
       },
     ];
   }, [epicenter, nodeMap, stage, playing, t]);
 
   const htmlEls: HtmlDatum[] = useMemo(() => {
-    if (!tickers.length) return [];
+    if (!tickers.length || !visible) return [];
     if (playing && t != null) {
-      const count = Math.max(
-        0,
-        Math.floor(((t - 0.72) / 0.28) * tickers.length)
-      );
-      return tickers.slice(0, Math.max(0, count)).map((tk) => ({
-        lat: tk.lat,
-        lng: tk.lng,
-        label: tk.label,
-        delta: tk.delta_pct,
-      }));
+      return tickers
+        .map((tk, i) => {
+          const appear = 0.72 + (i / Math.max(tickers.length, 1)) * 0.22;
+          if (t < appear) return null;
+          return {
+            id: tk.node_id || `${tk.label}-${i}`,
+            lat: tk.lat,
+            lng: tk.lng,
+            label: tk.label,
+            delta: tk.delta_pct,
+          };
+        })
+        .filter(Boolean) as HtmlDatum[];
     }
     if (
       stage !== "SIMULATE" &&
@@ -375,53 +509,94 @@ export default function GlobeView({
       return [];
     return tickers
       .slice(0, Math.max(1, Math.floor(propStep / 2) + 1))
-      .map((tk) => ({
+      .map((tk, i) => ({
+        id: tk.node_id || `${tk.label}-${i}`,
         lat: tk.lat,
         lng: tk.lng,
         label: tk.label,
         delta: tk.delta_pct,
       }));
-  }, [tickers, stage, propStep, playing, t]);
+  }, [tickers, stage, propStep, playing, t, visible]);
 
+  // Continuous camera during playback (throttled via React t is ok at 20fps for POV;
+  // we also push every frame while playing for smoother feel)
   useEffect(() => {
-    if (!epicenter || !nodeMap.has(epicenter) || !globeRef.current) return;
+    if (!globeReady || !globeRef.current) return;
+    if (!playing || t == null || !epicenter || !nodeMap.has(epicenter)) return;
+    if (!visible) return;
     const n = nodeMap.get(epicenter)!;
-    if (!playing || t == null) {
-      globeRef.current.pointOfView(
-        { lat: n.lat, lng: n.lng, altitude: 1.6 },
-        1600
-      );
-      lastCamMode.current = null;
-      return;
-    }
-    let mode = "strike";
-    let altitude = 1.4;
-    if (t >= 0.78) {
-      mode = "impact";
-      altitude = 2.6;
-    } else if (t >= 0.5) {
-      mode = "adapt";
-      altitude = 2.2;
-    } else if (t >= 0.35) {
-      mode = "cascade";
-      altitude = 1.8;
-    }
-    if (lastCamMode.current !== mode) {
-      lastCamMode.current = mode;
-      const lngOffset = mode === "cascade" ? 12 : mode === "adapt" ? -18 : 0;
-      globeRef.current.pointOfView(
-        { lat: n.lat, lng: n.lng + lngOffset, altitude },
-        1400
-      );
-    }
-  }, [epicenter, nodeMap, playing, t]);
+    let raf = 0;
+    let lastPush = 0;
+    const loop = (now: number) => {
+      if (!playingRef.current || !visibleRef.current) return;
+      const g = globeRef.current;
+      const epiId = epicenterRef.current;
+      if (!g || !epiId || !nodeMap.has(epiId)) return;
+      const epi = nodeMap.get(epiId)!;
+      const curT = playbackTRef.current ?? t;
+      if (now - lastPush > 32) {
+        lastPush = now;
+        const cam = sampleCamera(curT, epi);
+        const key = `${cam.altitude.toFixed(2)}:${cam.lng.toFixed(1)}`;
+        if (key !== lastCamKey.current) {
+          lastCamKey.current = key;
+          g.pointOfView(cam, 80);
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    // Initial fly
+    const cam0 = sampleCamera(t, n);
+    globeRef.current.pointOfView(cam0, 600);
+    lastCamKey.current = `${cam0.altitude.toFixed(2)}:${cam0.lng.toFixed(1)}`;
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, globeReady, epicenter, nodeMap, visible, t]);
+
+  // Non-playback epicenter fly (once)
+  useEffect(() => {
+    if (!globeReady || !globeRef.current || playing) return;
+    if (!epicenter || !nodeMap.has(epicenter)) return;
+    const n = nodeMap.get(epicenter)!;
+    const key = `epi:${epicenter}`;
+    if (lastCamKey.current === key) return;
+    lastCamKey.current = key;
+    globeRef.current.pointOfView(
+      { lat: n.lat, lng: n.lng, altitude: 1.6 },
+      1600
+    );
+  }, [epicenter, nodeMap, playing, globeReady]);
 
   useEffect(() => {
-    if (!globeRef.current || playing) return;
+    if (!globeReady || !globeRef.current || playing) return;
     if (stage === "PROPOSE" || stage === "AWAITING_APPROVAL") {
       globeRef.current.pointOfView({ altitude: 2.1 }, 1800);
     }
-  }, [stage, playing]);
+  }, [stage, playing, globeReady]);
+
+  // Align to epicenter before tactical cutaway (when becoming hidden)
+  useEffect(() => {
+    if (visible || !globeRef.current || !epicenter || !nodeMap.has(epicenter))
+      return;
+    const n = nodeMap.get(epicenter)!;
+    globeRef.current.pointOfView(
+      { lat: n.lat, lng: n.lng, altitude: 0.85 },
+      400
+    );
+  }, [visible, epicenter, nodeMap]);
+
+  const htmlElement = useCallback((d: object) => {
+    const data = d as HtmlDatum;
+    let el = tickerEls.current.get(data.id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "ticker-chip ticker-chip-enter";
+      tickerEls.current.set(data.id, el);
+    }
+    const up = data.delta >= 0;
+    el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? RED : GREEN}">${up ? "+" : ""}${data.delta}%</span>`;
+    return el;
+  }, []);
 
   return (
     <div
@@ -431,51 +606,52 @@ export default function GlobeView({
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? "auto" : "none",
         transition: "opacity 500ms ease-out",
+        zIndex: visible ? 1 : 0,
       }}
+      aria-hidden={!visible}
     >
       <Globe
         ref={globeRef}
         width={dims.w}
         height={dims.h}
-        backgroundColor="#0b0b0d"
+        backgroundColor={BG}
         globeImageUrl={BLUE_MARBLE}
         bumpImageUrl={TOPOLOGY}
         atmosphereColor="#6eb6ff"
         atmosphereAltitude={0.15}
-        pointsData={points}
-        pointAltitude={0.01}
+        onGlobeReady={() => setGlobeReady(true)}
+        pointsData={visible ? points : []}
+        pointAltitude={0.015}
         pointRadius="size"
         pointColor="color"
         pointLabel={(d) => (d as PointDatum).label}
-        arcsData={arcs}
+        arcsData={visible ? arcs : []}
         arcColor="color"
         arcStroke="stroke"
         arcAltitude="altitude"
         arcDashLength="dashLength"
         arcDashGap="dashGap"
         arcDashAnimateTime="dashTime"
-        ringsData={rings}
-        ringColor={() => "rgba(255,69,58,0.7)"}
+        arcDashInitialGap="dashInitialGap"
+        ringsData={visible ? rings : []}
+        ringColor={(d) => (d as RingDatum).color ?? "rgba(255,92,92,0.65)"}
         ringMaxRadius="maxR"
         ringPropagationSpeed="propagationSpeed"
         ringRepeatPeriod="repeatPeriod"
-        objectsData={objectsData}
+        objectsData={visible ? objectsData : []}
         objectLat="lat"
         objectLng="lng"
         objectAltitude="alt"
         objectThreeObject={objectThreeObject}
-        htmlElementsData={htmlEls}
-        htmlElement={(d) => {
-          const el = document.createElement("div");
-          const data = d as HtmlDatum;
-          const up = data.delta >= 0;
-          el.className = "ticker-chip";
-          el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? "#ff453a" : "#30d158"}">${up ? "+" : ""}${data.delta}%</span>`;
-          return el;
-        }}
-        htmlAltitude={0.02}
+        objectLabel={(d) => (d as ObjectDatum).label}
+        objectRotation={(d) => ({
+          y: (d as ObjectDatum).heading,
+        })}
+        htmlElementsData={visible ? htmlEls : []}
+        htmlElement={htmlElement}
+        htmlAltitude={0.04}
       />
-      {eventTitle && stage !== "IDLE" && !playing && (
+      {eventTitle && stage !== "IDLE" && !playing && visible && (
         <div className="pointer-events-none absolute bottom-4 left-4 right-4">
           <p className="eyebrow">Event</p>
           <p className="mt-0.5 max-w-lg text-[13px] text-atlas-text">

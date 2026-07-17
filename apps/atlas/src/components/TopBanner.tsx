@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
 interface TopBannerProps {
   clearance: "TRADER" | "DENIED";
   denial: string | null;
@@ -21,6 +23,23 @@ export function TopBanner({
 }: TopBannerProps) {
   const denied = clearance === "DENIED" || Boolean(denial);
   const hasError = Boolean(error);
+  const [resizedNote, setResizedNote] = useState(false);
+  const sawDeny = useRef(false);
+
+  useEffect(() => {
+    if (denied) {
+      sawDeny.current = true;
+      return;
+    }
+    if (sawDeny.current && clearance === "TRADER") {
+      setResizedNote(true);
+      const t = setTimeout(() => {
+        setResizedNote(false);
+        sawDeny.current = false;
+      }, 4000);
+      return () => clearTimeout(t);
+    }
+  }, [denied, clearance]);
 
   return (
     <header
@@ -29,24 +48,32 @@ export function TopBanner({
           ? "border-atlas-red/50 bg-atlas-red/10"
           : denied
             ? "border-atlas-red/40 bg-atlas-red/5"
-            : "border-white/[0.08] bg-atlas-bg/80 backdrop-blur-md"
+            : "border-atlas-hairline bg-atlas-bg/80 backdrop-blur-md"
       }`}
     >
       <div className="flex min-w-0 items-center gap-4">
-        <h1 className="shrink-0 text-[14px] font-semibold tracking-tight text-white">
-          Atlas Capital
+        <h1 className="shrink-0 text-[14px] font-semibold tracking-[0.04em] text-white">
+          ATLAS CAPITAL
         </h1>
-        <span className="hidden text-[12px] text-white/30 sm:inline">
+        <span className="hidden text-[12px] text-white/35 sm:inline">
           Autonomous fund
         </span>
         <span
           className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-            denied || hasError
+            hasError || denied
               ? "bg-atlas-red/15 text-atlas-red"
-              : "bg-atlas-accent/15 text-atlas-accent"
+              : resizedNote
+                ? "bg-atlas-amber/15 text-atlas-amber"
+                : "bg-atlas-cyan/15 text-atlas-cyan"
           }`}
         >
-          {hasError ? "Error" : denied ? "Clearance denied" : "Trader"}
+          {hasError
+            ? "Error"
+            : denied
+              ? "Clearance denied"
+              : resizedNote
+                ? "Resized after deny"
+                : "Trader"}
         </span>
         {hasError ? (
           <span className="flex min-w-0 items-center gap-2 text-[11px] text-atlas-red">
@@ -55,7 +82,7 @@ export function TopBanner({
               <button
                 type="button"
                 onClick={onDismissError}
-                className="shrink-0 rounded px-1.5 py-0.5 text-white/50 hover:bg-white/10 hover:text-white"
+                className="shrink-0 rounded px-1.5 py-0.5 text-white/50 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-atlas-cyan"
               >
                 Dismiss
               </button>
@@ -70,10 +97,14 @@ export function TopBanner({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-4 text-[11px] text-white/40">
+      <div className="flex shrink-0 items-center gap-4 text-[11px] text-white/45">
         <span className="hidden items-center gap-1.5 sm:flex">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-atlas-green" />
-          Live
+          <span
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              mode === "replay" ? "bg-atlas-amber" : "bg-atlas-green"
+            }`}
+          />
+          {mode === "replay" ? "Replay" : "Live"}
         </span>
         <span className="hidden font-mono tabular md:inline">{utc}</span>
         <span className="rounded-full bg-white/[0.04] px-2 py-0.5 capitalize">

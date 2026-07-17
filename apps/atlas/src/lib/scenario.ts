@@ -87,6 +87,24 @@ function detectDisruptionType(text: string): string {
   return "disruption";
 }
 
+function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function reachableCommodities(
   wm: WorldModel,
   epicenter: string,
@@ -247,8 +265,9 @@ export function matchScenario(opts: {
   }
 
   if (best.score === 0) {
-    // fallback: Hormuz as demo default when free text is vague
-    best = { id: "hormuz", score: 1 };
+    throw new Error(
+      "Couldn't parse a location from that text — pick a preset or name a chokepoint (Hormuz, Taiwan, Panama, Bab el-Mandeb…)."
+    );
   }
 
   const node = wm.nodes.find((n) => n.id === best.id)!;
@@ -256,6 +275,7 @@ export function matchScenario(opts: {
   const hasAction = ACTION_VERBS.some((v) => text.toLowerCase().includes(v));
   const severity = hasAction ? 0.85 : 0.65;
   const outcomes = screenOutcomes(best.id, wm);
+  const rand = mulberry32(hashSeed(text + "|" + best.id));
 
   const markets: FixtureMarket[] = outcomes
     .flatMap((o) => o.markets)
@@ -266,7 +286,7 @@ export function matchScenario(opts: {
       return {
         id,
         question: fromWm?.question ?? `Will ${id} move on this disruption?`,
-        yes_price: 0.4 + Math.random() * 0.15,
+        yes_price: 0.4 + rand() * 0.15,
         no_price: 0.45,
         volume_24h: 400000,
         zero_service: "prediction-market-odds",

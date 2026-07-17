@@ -22,13 +22,15 @@ export function ScenarioInput({
 }: ScenarioInputProps) {
   const [text, setText] = useState("");
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetsLoading, setPresetsLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/presets")
       .then((r) => r.json())
       .then((d: { presets: Preset[] }) => setPresets(d.presets ?? []))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setPresetsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -51,9 +53,9 @@ export function ScenarioInput({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
       className="pointer-events-auto w-full max-w-xl px-4"
     >
       <p className="mb-3 text-center text-[15px] font-medium text-white/90">
@@ -73,29 +75,37 @@ export function ScenarioInput({
         />
         <button
           type="button"
-          className="btn-primary shrink-0 px-4 text-[13px]"
+          className="btn-primary h-12 shrink-0 px-4 text-[13px]"
           disabled={loading || disabled || !text.trim()}
           onClick={submit}
         >
           {loading ? "Screening…" : "Screen"}
         </button>
       </div>
-      <p className="mt-2 text-center text-[11px] text-white/30">
+      <p className="mt-2 text-center text-[11px] text-white/35">
         ⌘K to focus · or try a preset
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {presets.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="pill px-3 py-1.5 text-[12px]"
-            disabled={loading || disabled}
-            onClick={() => onSubmit({ preset_id: p.id })}
-            title={p.text}
-          >
-            {p.label}
-          </button>
-        ))}
+        {presetsLoading
+          ? [0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="inline-block h-8 w-24 rounded-full shimmer"
+                aria-hidden
+              />
+            ))
+          : presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="pill px-3 py-1.5 text-[12px]"
+                disabled={loading || disabled}
+                onClick={() => onSubmit({ preset_id: p.id })}
+                title={p.text}
+              >
+                {p.label}
+              </button>
+            ))}
       </div>
     </motion.div>
   );

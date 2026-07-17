@@ -11,7 +11,7 @@ import {
   recordFill,
   writeThesis,
 } from "./adapters/nexla";
-import { gateExecuteTrade } from "./adapters/pomerium";
+import { clearRiskAuditLog, gateExecuteTrade } from "./adapters/pomerium";
 import {
   executeViaZero,
   getDiscoveredCapabilities,
@@ -117,6 +117,7 @@ export async function runScreen(
   const mode = opts.replay ? "replay" : "live";
   resetPositionBook();
   resetZeroWallet(5);
+  clearRiskAuditLog();
 
   const ctx: Mutable = {
     state: createInitialState(mode),
@@ -140,8 +141,8 @@ export async function runScreen(
     );
     await sleep(280);
 
-    // Zero enrichment beat
-    const ingest = await ingestViaZero({ replay: true });
+    // Zero enrichment beat — use real replay flag (live when configured)
+    const ingest = await ingestViaZero({ replay: Boolean(opts.replay) });
     const wallet = getZeroWallet();
     push(
       {
@@ -155,7 +156,8 @@ export async function runScreen(
       makeTape(
         "observe",
         "SCENARIO",
-        `Zero enrichment · ${ingest.capabilities.map((c) => c.name).join(", ")} · spend $${ingest.spendUsd.toFixed(2)}`
+        `Zero enrichment (${ingest.source}) · ${ingest.capabilities.map((c) => c.name).join(", ")} · spend $${ingest.spendUsd.toFixed(2)}`,
+        { actor: "Zero", source: ingest.source }
       )
     );
     await sleep(250);
@@ -167,15 +169,31 @@ export async function runScreen(
           preset_id: opts.preset_id,
         });
 
-    // Attach Zero-discovered odds flavor onto event if live scan existed
+    // Only merge Zero fixture headlines when geography matches (avoid Red Sea→Hormuz mashup)
+    const geoMatch =
+      ingest.source === "zero-live" ||
+      ingest.event.epicenter_node === matched.event.epicenter_node;
     matched.event = {
       ...matched.event,
       source: `${matched.event.source}+zero`,
-      news_headlines: [
-        ...matched.event.news_headlines,
-        ...ingest.event.news_headlines.slice(0, 1),
-      ].slice(0, 4),
+      news_headlines: geoMatch
+        ? [
+            ...matched.event.news_headlines,
+            ...ingest.event.news_headlines.slice(0, 1),
+          ].slice(0, 4)
+        : matched.event.news_headlines,
     };
+    if (!geoMatch && ingest.source === "zero-fixture") {
+      push(
+        {},
+        makeTape(
+          "system",
+          "SCENARIO",
+          `Zero fixture geography (${ingest.event.epicenter_node}) ≠ epicenter — skipped headline merge`,
+          { actor: "Zero", source: ingest.source }
+        )
+      );
+    }
 
     setStage("SCREEN");
     push(
@@ -328,14 +346,16 @@ export async function runSimulatePhase(
       makeTape(
         "act",
         "MODEL",
-        `Nexla map → ${mapped.data.nodeIds.length} nodes · ${disruptedEdges.length} disrupted edges`
+        `Nexla map (${mapped.source}) → ${mapped.data.nodeIds.length} nodes · ${disruptedEdges.length} disrupted edges`,
+        { actor: "Nexla", source: mapped.source }
       )
     );
     await sleep(350);
 
     setStage("SIMULATE");
+    // Keep globe until timeline `tactical_cutaway` — avoid pre-playback map flash
     push(
-      { viewport: "tactical" },
+      { viewport: "globe" },
       makeTape(
         "plan",
         "SIMULATE",
@@ -378,7 +398,8 @@ export async function runSimulatePhase(
       makeTape(
         "observe",
         "SIMULATE",
-        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"} · playback ${Math.round(timeline.duration_ms / 1000)}s`
+        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"} · playback ${Math.round(timeline.duration_ms / 1000)}s`,
+        { actor: "Akash", source: lease.source }
       )
     );
     await sleep(200);
@@ -535,7 +556,8 @@ export async function runExecutePhase(
           makeTape(
             "observe",
             "RISK",
-            `ACCESS DENIED — POMERIUM: ${denial.decision.reason}`
+            `ACCESS DENIED — POMERIUM (${denial.decision.source}): ${denial.decision.reason}`,
+            { actor: "Pomerium", source: denial.decision.source }
           )
         );
         await sleep(450);
@@ -586,7 +608,8 @@ export async function runExecutePhase(
         makeTape(
           "observe",
           "RISK",
-          `POMERIUM ALLOW · $${prop.size_usd.toFixed(2)} ${prop.market_id}`
+          `POMERIUM ALLOW (${allow.decision.source}) · $${prop.size_usd.toFixed(2)} ${prop.market_id}`,
+          { actor: "Pomerium", source: allow.decision.source }
         )
       );
       await sleep(250);
@@ -675,20 +698,30 @@ export async function runPipeline(
   emit: EmitFn,
   opts: { replay?: boolean } = {}
 ): Promise<FundState> {
+  const replay = opts.replay ?? true;
   const screenState = await runScreen(emit, {
     preset_id: "hormuz-closure",
-    replay: opts.replay ?? true,
+    replay,
   });
   const scenario_id = screenState.scenario?.scenario_id;
-  if (!scenario_id) return screenState;
+  if (!scenario_id) {
+    emit({ type: "pipeline_done", payload: screenState });
+    return screenState;
+  }
 
   const outcomes =
     screenState.affectedOutcomes.map((o: AffectedOutcome) => o.id);
   const simState = await runSimulatePhase(emit, {
     scenario_id,
     outcomes,
-    replay: true,
+    replay,
   });
   const ids = simState.proposals.map((p) => p.id);
-  return runExecutePhase(emit, { scenario_id, proposal_ids: ids });
+  const finalState = await runExecutePhase(emit, {
+    scenario_id,
+    proposal_ids: ids,
+  });
+  // Single terminal event so clients don't close on intermediate phase `done`
+  emit({ type: "pipeline_done", payload: finalState });
+  return finalState;
 }

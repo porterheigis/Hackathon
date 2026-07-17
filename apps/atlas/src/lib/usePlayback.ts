@@ -18,9 +18,11 @@ export interface UsePlaybackResult extends PlaybackState {
   skip: () => void;
   start: () => void;
   reset: () => void;
+  /** Live t without waiting for React throttle — for 60fps rAF consumers */
+  getT: () => number;
 }
 
-const UI_MS = 50; // ~20fps React updates
+const UI_MS = 50; // ~20fps React updates for HUD
 
 export function usePlayback(
   timeline: SimTimeline | null | undefined,
@@ -36,6 +38,7 @@ export function usePlayback(
   const lastUiRef = useRef(0);
   const playingRef = useRef(false);
   const finishedRef = useRef(false);
+  const mountedRef = useRef(true);
   const onDoneRef = useRef(opts?.onDone);
   const timelineRef = useRef(timeline);
   const autoStartRef = useRef(opts?.autoStart);
@@ -44,6 +47,13 @@ export function usePlayback(
   onDoneRef.current = opts?.onDone;
   timelineRef.current = timeline;
   autoStartRef.current = opts?.autoStart;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const stopRaf = () => {
     if (rafRef.current != null) {
@@ -61,30 +71,34 @@ export function usePlayback(
     setT(1);
     setPlaying(false);
     setDone(true);
-    // Defer parent callback so we don't nest setStates in the same flush
-    queueMicrotask(() => onDoneRef.current?.());
+    queueMicrotask(() => {
+      if (mountedRef.current) onDoneRef.current?.();
+    });
   }, []);
 
-  const tick = useCallback((now: number) => {
-    const tl = timelineRef.current;
-    if (!tl || !playingRef.current) return;
+  const tick = useCallback(
+    (now: number) => {
+      const tl = timelineRef.current;
+      if (!tl || !playingRef.current) return;
 
-    if (startRef.current == null) startRef.current = now;
-    const elapsed = now - startRef.current;
-    const next = Math.min(1, elapsed / Math.max(1, tl.duration_ms));
-    tRef.current = next;
+      if (startRef.current == null) startRef.current = now;
+      const elapsed = now - startRef.current;
+      const next = Math.min(1, elapsed / Math.max(1, tl.duration_ms));
+      tRef.current = next;
 
-    if (now - lastUiRef.current >= UI_MS || next >= 1) {
-      lastUiRef.current = now;
-      setT((prev) => (Math.abs(prev - next) < 0.0005 ? prev : next));
-    }
+      if (now - lastUiRef.current >= UI_MS || next >= 1) {
+        lastUiRef.current = now;
+        setT((prev) => (Math.abs(prev - next) < 0.0005 ? prev : next));
+      }
 
-    if (next >= 1) {
-      finish();
-      return;
-    }
-    rafRef.current = requestAnimationFrame(tick);
-  }, [finish]);
+      if (next >= 1) {
+        finish();
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    },
+    [finish]
+  );
 
   const start = useCallback(() => {
     if (!timelineRef.current) return;
@@ -116,7 +130,8 @@ export function usePlayback(
     setDone(false);
   }, []);
 
-  // Auto-start when timeline identity/key changes — deps are primitives only
+  const getT = useCallback(() => tRef.current, []);
+
   const timelineKey = timeline
     ? `${timeline.epicenter}:${timeline.duration_ms}:${timeline.assets.length}`
     : null;
@@ -132,7 +147,6 @@ export function usePlayback(
     return () => {
       stopRaf();
       playingRef.current = false;
-      // Let React Strict Mode remount restart cleanly
       if (startedKeyRef.current === timelineKey) {
         startedKeyRef.current = null;
       }
@@ -154,5 +168,6 @@ export function usePlayback(
     skip,
     start,
     reset,
+    getT,
   };
 }

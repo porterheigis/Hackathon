@@ -306,7 +306,14 @@ export interface FundState {
 }
 
 export interface OrchestratorEvent {
-  type: "tape" | "state" | "stage" | "proposals" | "done" | "error";
+  type:
+    | "tape"
+    | "state"
+    | "stage"
+    | "proposals"
+    | "done"
+    | "pipeline_done"
+    | "error";
   payload: unknown;
 }
 

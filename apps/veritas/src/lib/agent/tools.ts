@@ -1,14 +1,13 @@
 /**
- * The five tools the model can call, defined with strict schemas
- * (additionalProperties:false + required → the API guarantees valid inputs)
- * and re-validated with zod at execution.
+ * The five tools the agent can call — served to Claude Code as MCP tools
+ * (mcp__veritas__*) by scripts/veritas-mcp.ts, executed here server-side,
+ * inputs re-validated with zod.
  *
- * The anti-atlas core lives in execute_trade: a DENY comes back as a
- * tool_result with is_error:true carrying the reason and the cap — the
- * resized order on the next turn is a genuine model decision, there is no
- * hardcoded correction anywhere.
+ * The anti-atlas core lives in execute_trade: a DENY comes back as an
+ * is_error tool result carrying the reason and the cap — the resized order
+ * on the next turn is a genuine model decision, there is no hardcoded
+ * correction anywhere.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { logSignal, recordFill as nexlaRecordFill } from "../adapters/nexla";
 import { gateExecuteTrade } from "../risk/gate";
 import {
@@ -30,12 +29,22 @@ import {
 } from "../portfolio";
 import type { Emit } from "../sse";
 
-export const TOOL_DEFS: Anthropic.Tool[] = [
+export interface ToolDef {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required: string[];
+    additionalProperties: boolean;
+  };
+}
+
+export const TOOL_DEFS: ToolDef[] = [
   {
     name: "fetch_news",
     description:
       "Read the live news wire. Pass topic:\"\" for the general world wire (BBC), or a specific topic (e.g. \"opec oil supply\") for targeted headlines (Google News). Returns real, timestamped headlines.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -52,7 +61,6 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
     name: "search_markets",
     description:
       "Search live Polymarket prediction markets by keyword. Returns open binary Yes/No markets with real current prices, 24h volume, liquidity and end date. An empty list means no tradable market matches — pivot to another story or query.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -66,7 +74,6 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
     name: "get_market",
     description:
       "Pull a fresh quote for one market by id. Always call this before sizing an order — prices move.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -80,7 +87,6 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
     name: "execute_trade",
     description:
       "Place a paper order at the current real price. Every order passes a risk gate; a rejection returns the reason and the policy limits — adjust and retry.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {
@@ -100,7 +106,6 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
     name: "get_portfolio",
     description:
       "Current wallet, open positions and mark-to-market P&L at fresh prices.",
-    strict: true,
     input_schema: {
       type: "object",
       properties: {},

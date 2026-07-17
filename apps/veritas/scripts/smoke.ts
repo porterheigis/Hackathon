@@ -5,8 +5,10 @@
  * b) News wires (BBC general + Google News targeted), freshness < 48h
  * c) Risk gate mirror follows policy/risk.yaml (edit the yaml → test follows)
  * d) markToMarket fixed case
- * e) Anthropic ping: forced tool call round-trip (skipped without credentials)
+ * e) claude CLI present (engine) + MCP server handshake (5 tools)
+ * f) soft: real headless claude -p round-trip (needs a logged-in Claude Code)
  */
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -21,6 +23,8 @@ function loadEnvFile(file: string): void {
 }
 loadEnvFile(path.join(process.cwd(), ".env.local"));
 loadEnvFile(path.join(process.cwd(), ".env"));
+
+const CLAUDE_BIN = process.env.VERITAS_CLAUDE_BIN ?? "claude";
 
 interface CheckResult {
   name: string;
@@ -49,6 +53,63 @@ async function check(
 
 function assert(cond: unknown, message: string): asserts cond {
   if (!cond) throw new Error(message);
+}
+
+/** Minimal JSON-RPC-over-stdio handshake against the bundled MCP server —
+ * the exact artifact the runtime uses (.veritas/mcp-server.cjs, built by
+ * the presmoke hook). */
+async function mcpHandshake(): Promise<string[]> {
+  const bundle = path.join(process.cwd(), ".veritas", "mcp-server.cjs");
+  assert(fs.existsSync(bundle), "bundle missing — run `npm run mcp:build`");
+  const child = spawn(process.execPath, [bundle], { cwd: process.cwd() });
+  const send = (obj: unknown) => child.stdin.write(`${JSON.stringify(obj)}\n`);
+
+  try {
+    return await new Promise<string[]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("mcp handshake timeout (20s)")), 20_000);
+      let buffer = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString();
+        let idx: number;
+        while ((idx = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line) as {
+              id?: number;
+              result?: { tools?: { name: string }[] };
+            };
+            if (msg.id === 1) {
+              send({ jsonrpc: "2.0", method: "notifications/initialized" });
+              send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+            } else if (msg.id === 2) {
+              clearTimeout(timer);
+              resolve((msg.result?.tools ?? []).map((t) => t.name));
+            }
+          } catch {
+            /* non-JSON noise */
+          }
+        }
+      });
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "veritas-smoke", version: "0" },
+        },
+      });
+    });
+  } finally {
+    child.kill();
+  }
 }
 
 async function main(): Promise<void> {
@@ -114,32 +175,50 @@ async function main(): Promise<void> {
     return "YES $5 @40¢ → 55¢ = +$1.875";
   });
 
+  await check("claude CLI (engine)", async () => {
+    const res = spawnSync(CLAUDE_BIN, ["--version"], { encoding: "utf8" });
+    assert(
+      res.status === 0,
+      `\`${CLAUDE_BIN} --version\` failed: ${res.stderr || res.error?.message || `exit ${res.status}`}`
+    );
+    return res.stdout.trim();
+  });
+
+  await check("mcp server handshake", async () => {
+    const tools = await mcpHandshake();
+    assert(tools.length === 5, `expected 5 tools, got ${tools.length}: ${tools.join(", ")}`);
+    return `5 MCP tools: ${tools.join(", ")}`;
+  });
+
   await check(
-    "anthropic tool-use ping",
+    "claude headless round-trip",
     async () => {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic();
-      const model = process.env.VERITAS_MODEL ?? "claude-opus-4-8";
-      const response = await client.messages.create({
-        model,
-        max_tokens: 256,
-        tools: [
-          {
-            name: "ping",
-            description: "Reply with a pong.",
-            input_schema: {
-              type: "object",
-              properties: { pong: { type: "boolean" } },
-              required: ["pong"],
-              additionalProperties: false,
-            },
-          },
+      const res = spawnSync(
+        CLAUDE_BIN,
+        [
+          "-p",
+          "Reply with exactly: OK",
+          "--output-format",
+          "json",
+          "--max-budget-usd",
+          "0.50",
+          "--no-session-persistence",
+          "--strict-mcp-config",
         ],
-        tool_choice: { type: "tool", name: "ping" },
-        messages: [{ role: "user", content: "ping" }],
-      });
-      assert(response.stop_reason === "tool_use", `stop_reason=${response.stop_reason}`);
-      return `${model} answered with a tool call`;
+        { encoding: "utf8", timeout: 90_000 }
+      );
+      assert(res.status === 0, `exit ${res.status}: ${(res.stderr || "").slice(0, 300)}`);
+      const parsed = JSON.parse(res.stdout) as {
+        is_error?: boolean;
+        errors?: string[];
+        subtype?: string;
+        total_cost_usd?: number;
+      };
+      assert(
+        parsed.is_error === false,
+        `result is_error (${parsed.subtype}): ${parsed.errors?.join("; ")}`
+      );
+      return `session OK — cost=$${parsed.total_cost_usd?.toFixed(2) ?? "?"}`;
     },
     { soft: true }
   );
@@ -152,7 +231,7 @@ async function main(): Promise<void> {
     console.log(`  [${mark}] ${r.name} — ${r.detail}`);
   }
   if (results.some((r) => !r.ok && r.soft)) {
-    console.log("  (WARN = agent credentials missing/unreachable; RUN AGENT needs ANTHROPIC_API_KEY)");
+    console.log("  (WARN = the headless round-trip needs a logged-in Claude Code session)");
   }
   process.exit(hardFailures > 0 ? 1 : 0);
 }

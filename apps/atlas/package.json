@@ -10,6 +10,7 @@
     "sim-worker": "cd akash/worker && python -m uvicorn main:app --host 0.0.0.0 --port 8080",
     "test:adapters": "npx tsx scripts/test-adapters.ts",
     "test:timeline": "npx tsx scripts/test-timeline.ts",
+    "test:presentation": "npx tsx scripts/test-presentation.ts",
     "demo": "bash scripts/demo.sh"
   },
   "dependencies": {

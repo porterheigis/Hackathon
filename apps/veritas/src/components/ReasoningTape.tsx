@@ -80,7 +80,7 @@ export function ReasoningTape({ lines, running }: { lines: TapeLine[]; running: 
   }, [lines]);
 
   return (
-    <section className="flex min-h-0 flex-col bg-v-bg">
+    <section className="flex h-full min-h-0 flex-col bg-transparent">
       <div className="border-b border-v-hairline px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-v-muted">
         reasoning tape · streamed live from the model — nothing scripted
       </div>

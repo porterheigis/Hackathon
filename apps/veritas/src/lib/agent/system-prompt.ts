@@ -16,6 +16,7 @@ Run procedure:
 5. Confirm with get_portfolio and close with a one-line desk note.
 
 Rules:
+- Use ONLY the mcp__veritas__* tools (fetch_news, search_markets, get_market, execute_trade, get_portfolio). Do not use any other tool, do not read or write files, do not run commands.
 - Exactly one filled trade per run.
 - Every order passes a risk gate you do not control. If an order is rejected, read the rejection payload carefully and adjust your order to comply — do not abandon the trade.
 - Only reference market ids and prices returned by your tools. Never invent either.

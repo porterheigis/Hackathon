@@ -10,17 +10,20 @@ import type {
   PipelineStage,
   WorldModel,
 } from "@/lib/types";
+import {
+  DISPLAY_STEPS,
+  getPresentationState,
+  type DrawerTab,
+  type Phase,
+} from "@/lib/presentation";
 import { emptyFundState } from "@/lib/store-client";
 import { usePlayback } from "@/lib/usePlayback";
 import { StageRail } from "@/components/StageRail";
-import { AgentTape } from "@/components/AgentTape";
-import { FundPanel } from "@/components/FundPanel";
-import { TelemetryStrip } from "@/components/TelemetryStrip";
-import { TopBanner } from "@/components/TopBanner";
-import { ScenarioInput } from "@/components/ScenarioInput";
-import { OutcomePicker } from "@/components/OutcomePicker";
-import { ProposalPanel } from "@/components/ProposalPanel";
 import { SimTheaterHUD } from "@/components/SimTheaterHUD";
+import { EventCard } from "@/components/EventCard";
+import { PnlCard } from "@/components/PnlCard";
+import { PartnerDock } from "@/components/PartnerDock";
+import { CommandDrawer } from "@/components/CommandDrawer";
 
 const GlobeView = dynamic(() => import("@/components/GlobeView"), {
   ssr: false,
@@ -34,27 +37,6 @@ const GlobeView = dynamic(() => import("@/components/GlobeView"), {
 const TacticalView = dynamic(() => import("@/components/TacticalView"), {
   ssr: false,
 });
-
-const STAGES: PipelineStage[] = [
-  "SCENARIO",
-  "SCREEN",
-  "MODEL",
-  "SIMULATE",
-  "PROPOSE",
-  "RISK",
-  "EXECUTE",
-  "SETTLE",
-];
-
-type Phase =
-  | "idle"
-  | "screening"
-  | "awaiting_outcomes"
-  | "simulating"
-  | "playing"
-  | "awaiting_approval"
-  | "executing"
-  | "done";
 
 function CommandCenterInner() {
   const searchParams = useSearchParams();
@@ -70,6 +52,8 @@ function CommandCenterInner() {
   const [error, setError] = useState<string | null>(null);
   const [tacticalOverride, setTacticalOverride] = useState(false);
   const [playbackReady, setPlaybackReady] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("activity");
 
   const timeline = state.sim?.timeline ?? null;
 
@@ -185,6 +169,7 @@ function CommandCenterInner() {
     setError(null);
     setPlaybackReady(false);
     setTacticalOverride(false);
+    setDrawerOpen(false);
     playback.reset();
   }, [mode, playback]);
 
@@ -329,84 +314,51 @@ function CommandCenterInner() {
     };
   }, [state.scenario?.scenario_id, selectedProposals, running, fail]);
 
-  const activeStageIndex = useMemo(() => {
-    if (phase === "playing") return STAGES.indexOf("SIMULATE");
-    if (state.stage === "IDLE" || state.stage === "ERROR") return -1;
-    if (state.stage === "AWAITING_OUTCOMES") return STAGES.indexOf("SCREEN");
-    if (state.stage === "AWAITING_APPROVAL") return STAGES.indexOf("PROPOSE");
-    if (state.stage === "DONE") return STAGES.length;
-    const idx = STAGES.indexOf(state.stage);
-    return idx;
-  }, [state.stage, phase]);
+  const presentation = useMemo(
+    () =>
+      getPresentationState({
+        phase,
+        stage: state.stage,
+        selectedOutcomeCount: selectedOutcomes.length,
+        selectedProposalCount: selectedProposals.length,
+      }),
+    [phase, state.stage, selectedOutcomes.length, selectedProposals.length]
+  );
 
-  const showIdleHero =
-    phase === "idle" ||
-    (phase === "screening" && !state.affectedOutcomes.length);
+  useEffect(() => {
+    if (!presentation.requiredPanel) return;
+    setDrawerTab(presentation.requiredPanel);
+    setDrawerOpen(true);
+  }, [presentation.requiredPanel]);
 
-  const showOutcomePicker =
-    phase === "awaiting_outcomes" ||
-    phase === "simulating" ||
-    (state.stage === "AWAITING_OUTCOMES" && phase !== "playing");
+  const openDrawer = useCallback((tab: DrawerTab) => {
+    setDrawerTab(tab);
+    setDrawerOpen(true);
+  }, []);
 
-  const showProposals =
-    (phase === "awaiting_approval" || phase === "executing") &&
-    state.proposals.length > 0;
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
-  const showFundSettled = phase === "done" || state.stage === "DONE";
+  const handlePrimaryAction = useCallback(() => {
+    if (presentation.ctaDisabled) return;
+    if (presentation.ctaAction === "focus-scenario") {
+      document.getElementById("scenario-command")?.focus();
+    } else if (presentation.ctaAction === "simulate") {
+      handleSimulate();
+    } else if (presentation.ctaAction === "execute") {
+      handleExecute();
+    } else if (presentation.ctaAction === "new-scenario") {
+      handleNewScenario();
+    }
+  }, [presentation, handleSimulate, handleExecute, handleNewScenario]);
 
   const isPlaying = phase === "playing";
   const showTactical =
     tacticalOverride || (state.viewport === "tactical" && !isPlaying);
 
-  const stageLabel = isPlaying
-    ? "SIMULATE · PLAYBACK"
-    : state.stage !== "IDLE"
-      ? state.stage
-      : undefined;
-
   return (
-    <div className="flex h-screen w-screen flex-col bg-atlas-bg text-atlas-text">
-      <TopBanner
-        clearance={state.clearance}
-        denial={state.lastDenial}
-        mode={mode}
-        utc={utc}
-        stageLabel={stageLabel}
-        error={error}
-        onDismissError={() => setError(null)}
-      />
-      <StageRail
-        stages={STAGES}
-        activeIndex={activeStageIndex}
-        current={isPlaying ? "SIMULATE" : state.stage}
-      />
-
-      <div className="grid min-h-0 flex-1 grid-cols-12 border-t border-white/[0.08]">
-        <aside className="col-span-3 flex min-h-0 flex-col border-r border-white/[0.08]">
-          <div className="border-b border-white/[0.08] px-3 py-2">
-            <p className="eyebrow">Agent tape</p>
-          </div>
-          {showOutcomePicker && state.affectedOutcomes.length > 0 && (
-            <OutcomePicker
-              outcomes={state.affectedOutcomes}
-              selected={selectedOutcomes}
-              onChange={setSelectedOutcomes}
-              onRun={handleSimulate}
-              loading={phase === "simulating" || phase === "playing"}
-            />
-          )}
-          <AgentTape tape={state.tape} idle={showIdleHero && phase === "idle"} />
-        </aside>
-
-        <main className="relative col-span-6 min-h-0 overflow-hidden">
-          {showIdleHero && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-atlas-bg/40 backdrop-blur-[2px]">
-              <ScenarioInput
-                onSubmit={handleScreen}
-                loading={phase === "screening"}
-              />
-            </div>
-          )}
+    <div className="cockpit-shell">
+      <main className="cockpit-stage">
+        <div className="globe-layer">
           <GlobeView
             worldModel={worldModel}
             epicenter={state.event?.epicenter_node ?? null}
@@ -436,6 +388,55 @@ function CommandCenterInner() {
             visible={showTactical}
             eventTitle={state.event?.title ?? null}
           />
+        </div>
+        <div className="scene-vignette" aria-hidden="true" />
+        <div className="scene-grid" aria-hidden="true" />
+
+        <header className="cockpit-header">
+          <div className="atlas-brand" aria-label="Atlas Capital">
+            <span className="atlas-glyph" aria-hidden="true"><i /></span>
+            <span className="atlas-wordmark"><strong>Atlas</strong><em>Capital</em></span>
+          </div>
+          <StageRail
+            steps={DISPLAY_STEPS}
+            activeIndex={presentation.activeIndex}
+            completed={presentation.completed}
+          />
+          <div className="cockpit-actions">
+            <button
+              type="button"
+              className="command-status"
+              onClick={() => openDrawer("activity")}
+              aria-label="Open command details"
+            >
+              <span className={error || state.lastDenial ? "is-alert" : ""} />
+              <i>{mode}</i>
+              <b>{utc.slice(11, 19)}</b>
+            </button>
+            <button
+              type="button"
+              className="primary-command"
+              disabled={presentation.ctaDisabled}
+              onClick={handlePrimaryAction}
+            >
+              <span>{presentation.ctaLabel}</span>
+              <svg viewBox="0 0 22 22" aria-hidden="true"><path d="M6 3.5 17 11 6 18.5Z" /></svg>
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="cockpit-alert" role="alert">
+            <span>System alert</span>
+            <p>{error}</p>
+            <button type="button" onClick={() => setError(null)}>Dismiss</button>
+          </div>
+        )}
+
+        <EventCard event={state.event} phase={phase} onSubmit={handleScreen} />
+        <PnlCard state={state} onOpen={() => openDrawer("fund")} />
+        <PartnerDock telemetry={state.telemetry} onOpen={() => openDrawer("systems")} />
+
           <AnimatePresence>
             {isPlaying && (
               <SimTheaterHUD
@@ -449,32 +450,23 @@ function CommandCenterInner() {
               />
             )}
           </AnimatePresence>
-        </main>
+      </main>
 
-        <aside className="col-span-3 flex min-h-0 flex-col border-l border-white/[0.08]">
-          <div className="border-b border-white/[0.08] px-3 py-2">
-            <p className="eyebrow">The fund</p>
-          </div>
-          {showProposals ? (
-            <ProposalPanel
-              proposals={state.proposals}
-              selected={selectedProposals}
-              onChange={setSelectedProposals}
-              onExecute={handleExecute}
-              loading={phase === "executing"}
-              denial={state.lastDenial}
-            />
-          ) : (
-            <FundPanel
-              state={state}
-              showNewScenario={showFundSettled || phase === "awaiting_approval"}
-              onNewScenario={handleNewScenario}
-            />
-          )}
-        </aside>
-      </div>
-
-      <TelemetryStrip telemetry={state.telemetry} stage={state.stage} />
+      <CommandDrawer
+        open={drawerOpen}
+        activeTab={drawerTab}
+        state={state}
+        phase={phase}
+        selectedOutcomes={selectedOutcomes}
+        selectedProposals={selectedProposals}
+        onTabChange={setDrawerTab}
+        onClose={closeDrawer}
+        onOutcomeChange={setSelectedOutcomes}
+        onProposalChange={setSelectedProposals}
+        onRun={handleSimulate}
+        onExecute={handleExecute}
+        onNewScenario={handleNewScenario}
+      />
     </div>
   );
 }

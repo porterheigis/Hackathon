@@ -1,40 +1,38 @@
 import { runAgent } from "@/lib/agent/loop";
-import type { AgentEvent } from "@/lib/sse";
+import { beginRun, endRun } from "@/lib/agent/run-registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-let activeRun = false;
-
 export async function GET() {
-  if (activeRun) {
-    return Response.json({ error: "a run is already in progress" }, { status: 409 });
-  }
-  activeRun = true;
-
   const encoder = new TextEncoder();
   let closed = false;
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
 
-  const stream = new ReadableStream({
+  const run = beginRun((event) => {
+    if (closed || !controllerRef) return;
+    try {
+      controllerRef.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    } catch {
+      closed = true;
+    }
+  });
+  if (!run) {
+    return Response.json({ error: "a run is already in progress" }, { status: 409 });
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: AgentEvent) => {
-        if (closed) return;
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        } catch {
-          closed = true;
-        }
-      };
-
+      controllerRef = controller;
       try {
-        await runAgent(send);
+        await runAgent(run);
       } catch (err) {
-        send({
+        run.emit({
           type: "run_error",
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        activeRun = false;
+        endRun(run.id);
         if (!closed) {
           try {
             controller.close();
@@ -46,7 +44,7 @@ export async function GET() {
     },
     cancel() {
       closed = true;
-      activeRun = false;
+      endRun(run.id);
     },
   });
 

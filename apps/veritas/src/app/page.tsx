@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarketBoard } from "@/components/MarketBoard";
 import { NewsWire } from "@/components/NewsWire";
@@ -10,6 +11,11 @@ import { TopBar } from "@/components/TopBar";
 import type { PortfolioSnapshot } from "@/lib/portfolio";
 import type { Market, NewsItem } from "@/lib/schemas";
 import type { AgentEvent, SourceStatus, TapeLine } from "@/lib/sse";
+
+const EarthGlobe = dynamic(() => import("@/components/EarthGlobe"), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface WirePayload {
   news: { source: string; items: NewsItem[] } | null;
@@ -153,7 +159,17 @@ export default function Page() {
       <SourceStatusBar statuses={statuses} />
       <main className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_360px] gap-px bg-v-hairline">
         <NewsWire items={news} source={newsSource} />
-        <ReasoningTape lines={tape} running={running} />
+        <div className="relative min-h-0 overflow-hidden bg-v-bg">
+          <div className="absolute inset-0">
+            <EarthGlobe />
+          </div>
+          <div
+            className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ${tape.length ? "bg-v-bg/75" : "bg-v-bg/15"}`}
+          />
+          <div className={`relative z-10 h-full ${tape.length ? "" : "pointer-events-none"}`}>
+            <ReasoningTape lines={tape} running={running} />
+          </div>
+        </div>
         <div className="grid min-h-0 grid-rows-2 gap-px bg-v-hairline">
           <MarketBoard markets={markets} />
           <PositionBook portfolio={portfolio} pnlHistory={pnlHistory} />

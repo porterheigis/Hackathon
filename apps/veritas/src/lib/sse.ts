@@ -74,3 +74,12 @@ export function uid(prefix: string): string {
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+export function tapeLine(
+  emit: Emit,
+  kind: TapeKind,
+  text: string,
+  extra?: { tool?: string; payload?: unknown }
+): void {
+  emit({ type: "tape", id: uid("line"), ts: nowIso(), kind, text, ...extra });
+}

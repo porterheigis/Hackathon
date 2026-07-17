@@ -13,12 +13,14 @@ interface ScenarioInputProps {
   onSubmit: (opts: { text?: string; preset_id?: string }) => void;
   loading?: boolean;
   disabled?: boolean;
+  inputId?: string;
 }
 
 export function ScenarioInput({
   onSubmit,
   loading,
   disabled,
+  inputId = "scenario-command",
 }: ScenarioInputProps) {
   const [text, setText] = useState("");
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -54,16 +56,15 @@ export function ScenarioInput({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      className="pointer-events-auto w-full max-w-xl px-4"
+      className="scenario-composer"
     >
-      <p className="mb-3 text-center text-[15px] font-medium text-white/90">
-        Describe a world event
-      </p>
-      <div className="flex gap-2">
+      <div className="scenario-input-row">
         <input
+          id={inputId}
           ref={inputRef}
           className="input-hero"
-          placeholder="e.g. The Strait of Hormuz closes…"
+          aria-label="World event"
+          placeholder="Describe a world event…"
           value={text}
           disabled={loading || disabled}
           onChange={(e) => setText(e.target.value)}
@@ -73,22 +74,23 @@ export function ScenarioInput({
         />
         <button
           type="button"
-          className="btn-primary shrink-0 px-4 text-[13px]"
+          className="scenario-submit"
           disabled={loading || disabled || !text.trim()}
           onClick={submit}
         >
-          {loading ? "Screening…" : "Screen"}
+          {loading ? "Scanning…" : "Analyze"}
         </button>
       </div>
-      <p className="mt-2 text-center text-[11px] text-white/30">
-        ⌘K to focus · or try a preset
+      <p className="scenario-hint">
+        <span>⌘K to focus</span>
+        <span>Or select a live scenario</span>
       </p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
+      <div className="scenario-presets">
         {presets.map((p) => (
           <button
             key={p.id}
             type="button"
-            className="pill px-3 py-1.5 text-[12px]"
+            className="scenario-preset"
             disabled={loading || disabled}
             onClick={() => onSubmit({ preset_id: p.id })}
             title={p.text}

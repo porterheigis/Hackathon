@@ -10,8 +10,10 @@ function timeOf(published: string): string {
 
 export function NewsWire({ items, source }: { items: NewsItem[]; source: string }) {
   return (
-    <section className="flex min-h-0 flex-col bg-v-bg">
-      <div className="border-b border-v-hairline px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-v-muted">
+    <section className="hud-panel relative flex min-h-0 flex-col">
+      <i className="hud-corner hud-corner-tl" />
+      <i className="hud-corner hud-corner-br" />
+      <div className="eyebrow border-b border-v-hairline px-3 py-2">
         news wire · {source || "connecting…"}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">

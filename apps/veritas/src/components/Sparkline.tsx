@@ -15,7 +15,7 @@ export function Sparkline({ values }: { values: number[] }) {
     })
     .join(" ");
   const last = values[values.length - 1];
-  const stroke = last > 0 ? "#2fd682" : last < 0 ? "#ff5c5c" : "#7a7466";
+  const stroke = last > 0 ? "#31d9a0" : last < 0 ? "#ff5a4f" : "rgba(217, 239, 248, 0.45)";
 
   return (
     <svg width={width} height={height} className="shrink-0">

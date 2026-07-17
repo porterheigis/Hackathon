@@ -15,7 +15,7 @@ function DenyLine({ line }: { line: TapeLine }) {
     gate?: string;
   };
   return (
-    <div className="fade-in my-1 border border-v-red bg-v-red/10 px-3 py-2">
+    <div className="fade-in deny-pulse my-1 rounded-[5px] border border-v-red bg-v-red/10 px-3 py-2">
       <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-v-red">
         ⛔ access denied — {p.reason ?? "policy_denied"}
       </div>
@@ -81,7 +81,7 @@ export function ReasoningTape({ lines, running }: { lines: TapeLine[]; running: 
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-transparent">
-      <div className="border-b border-v-hairline px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-v-muted">
+      <div className="eyebrow border-b border-v-hairline px-3 py-2">
         reasoning tape · streamed live from the model — nothing scripted
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">

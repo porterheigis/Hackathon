@@ -163,6 +163,8 @@ export default function Page() {
           <div className="absolute inset-0">
             <EarthGlobe />
           </div>
+          <div className="scene-vignette" />
+          <div className="scene-grid" />
           <div
             className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ${tape.length ? "bg-v-bg/75" : "bg-v-bg/15"}`}
           />

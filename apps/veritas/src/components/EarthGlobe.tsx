@@ -25,11 +25,11 @@ export default function EarthGlobe() {
         ref={globeRef}
         width={dims.w}
         height={dims.h}
-        backgroundColor="#0c0a07"
+        backgroundColor="#02070d"
         globeImageUrl="/earth-night.jpg"
         bumpImageUrl="/earth-topology.png"
-        atmosphereColor="#ffb454"
-        atmosphereAltitude={0.12}
+        atmosphereColor="#39e7f2"
+        atmosphereAltitude={0.18}
         onGlobeReady={() => {
           const g = globeRef.current;
           if (!g) return;

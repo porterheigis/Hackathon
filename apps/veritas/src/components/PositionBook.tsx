@@ -18,8 +18,10 @@ export function PositionBook({
   const denials = portfolio?.denials ?? [];
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-v-bg">
-      <div className="flex items-center border-b border-v-hairline px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-v-muted">
+    <section className="hud-panel relative flex min-h-0 flex-1 flex-col">
+      <i className="hud-corner hud-corner-tl" />
+      <i className="hud-corner hud-corner-br" />
+      <div className="eyebrow flex items-center border-b border-v-hairline px-3 py-2">
         position book · mark-to-market
         <span className="ml-auto">
           <Sparkline values={pnlHistory} />

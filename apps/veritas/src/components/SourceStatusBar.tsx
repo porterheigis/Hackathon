@@ -9,9 +9,9 @@ function chipColor(status?: SourceStatus): string {
     case "live":
       return "text-v-green border-v-green/40";
     case "mirror":
-      return "text-v-amber border-v-amber/40";
+      return "text-v-warn border-v-warn/40";
     case "cached":
-      return "text-v-amber border-v-amber/40";
+      return "text-v-warn border-v-warn/40";
     case "down":
       return "text-v-red border-v-red/50";
     default:
@@ -42,7 +42,7 @@ export function SourceStatusBar({
           <span
             key={source}
             title={status?.detail ?? ""}
-            className={`rounded-sm border px-2 py-0.5 uppercase ${chipColor(status)}`}
+            className={`rounded-full border px-2 py-0.5 uppercase ${chipColor(status)}`}
           >
             {source} · {chipLabel(status)}
           </span>

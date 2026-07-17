@@ -500,7 +500,6 @@ function CommandCenterInner() {
           />
         </div>
         <div className="scene-vignette" aria-hidden="true" />
-        <div className="scene-grid opening-chrome" aria-hidden="true" />
 
         <header className="cockpit-header opening-chrome">
           <div className="atlas-brand" aria-label="Atlas Capital">

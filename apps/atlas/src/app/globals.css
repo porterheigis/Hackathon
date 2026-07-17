@@ -152,19 +152,6 @@ input:focus-visible {
     linear-gradient(0deg, rgba(2, 7, 13, 0.8) 0, transparent 24%),
     radial-gradient(circle at 58% 52%, transparent 35%, rgba(2, 7, 13, 0.45) 100%);
 }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  opacity: 0.08;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(57, 231, 242, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(57, 231, 242, 0.12) 1px, transparent 1px);
-  background-size: 80px 80px;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 48%, transparent 100%);
-}
-
 /* Header and progress rail */
 .cockpit-header {
   position: absolute;

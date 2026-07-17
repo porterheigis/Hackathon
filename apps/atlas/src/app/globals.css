@@ -78,6 +78,66 @@ input:focus-visible {
   overflow: hidden;
   background: var(--void);
 }
+
+/* Opening sequence — timed to the supplied 24 fps reference. */
+.opening-sequence {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: auto;
+  animation: atlasOpeningRetire 3.3s step-end both;
+}
+.opening-sequence::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #000;
+  animation: atlasOpeningVeil 3.3s linear both;
+}
+.opening-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  animation: atlasOpeningBrand 3.3s cubic-bezier(.22, 1, .36, 1) both;
+}
+.opening-brand .atlas-glyph {
+  width: 46px;
+  height: 42px;
+  transform: none;
+}
+.opening-brand .atlas-glyph::before,
+.opening-brand .atlas-glyph::after {
+  width: 14px;
+  height: 40px;
+}
+.opening-brand .atlas-glyph i {
+  left: 15px;
+  bottom: 11px;
+  width: 16px;
+}
+.opening-brand .atlas-wordmark {
+  gap: 15px;
+}
+.opening-brand .atlas-wordmark strong {
+  font-size: 18px;
+  letter-spacing: .3em;
+}
+.opening-brand .atlas-wordmark em {
+  display: inline;
+  font-size: 17px;
+  letter-spacing: .3em;
+}
+.opening-chrome {
+  animation: atlasChromeReveal 3.3s cubic-bezier(.22, 1, .36, 1) both;
+}
+.opening-panel {
+  animation: atlasPanelReveal 3.3s cubic-bezier(.22, 1, .36, 1) both;
+}
 .globe-layer { position: absolute; inset: 0; z-index: 0; }
 .scene-vignette {
   position: absolute;
@@ -135,7 +195,7 @@ input:focus-visible {
   background: var(--ice);
 }
 .atlas-glyph::before { left: 8px; transform: skewX(-24deg); }
-.atlas-glyph::after { right: 8px; transform: skewX(24deg); }
+.atlas-glyph::after { right: 8px; transform: skewX(24deg); background: #e51f3f; }
 .atlas-glyph i {
   position: absolute;
   z-index: 2;
@@ -563,6 +623,33 @@ input:focus-visible {
 @keyframes radarSpin { to { transform: rotate(360deg); } }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @keyframes denyPulse { 0% { box-shadow: 0 0 0 0 rgba(255, 90, 79, 0.45); } 100% { box-shadow: 0 0 0 12px rgba(255, 90, 79, 0); } }
+@keyframes atlasOpeningVeil {
+  0%, 54.5% { opacity: 1; }
+  81.8%, 100% { opacity: 0; }
+}
+@keyframes atlasOpeningBrand {
+  0%, 9% { opacity: 0; }
+  33%, 54.5% { opacity: 1; }
+  84.8%, 100% { opacity: 0; }
+}
+@keyframes atlasChromeReveal {
+  0%, 78.8% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+@keyframes atlasPanelReveal {
+  0%, 78.8% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes atlasOpeningRetire {
+  0%, 99.9% { visibility: visible; }
+  100% { visibility: hidden; }
+}
 
 @media (max-width: 1280px) {
   .cockpit-header { grid-template-columns: 190px minmax(480px, 1fr) 280px; padding-inline: 22px; }
@@ -641,6 +728,10 @@ input:focus-visible {
   .sim-hud { width: 100%; }
   .command-drawer { inset: 0; width: 100vw; border-left: 0; }
   .cockpit-alert { top: 112px; }
+  .opening-brand {
+    gap: 13px;
+    transform: scale(.78);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -649,5 +740,12 @@ input:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  .opening-sequence { display: none; }
+  .opening-chrome,
+  .opening-panel {
+    opacity: 1;
+    filter: none;
+    animation: none !important;
   }
 }

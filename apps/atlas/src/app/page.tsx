@@ -360,6 +360,15 @@ function CommandCenterInner() {
   return (
     <div className="cockpit-shell">
       <main className="cockpit-stage">
+        <div className="opening-sequence" aria-hidden="true">
+          <div className="opening-brand">
+            <span className="atlas-glyph"><i /></span>
+            <span className="atlas-wordmark opening-wordmark">
+              <strong>Atlas</strong><em>Capital</em>
+            </span>
+          </div>
+        </div>
+
         <div className="globe-layer">
           <GlobeView
             worldModel={worldModel}
@@ -392,9 +401,9 @@ function CommandCenterInner() {
           />
         </div>
         <div className="scene-vignette" aria-hidden="true" />
-        <div className="scene-grid" aria-hidden="true" />
+        <div className="scene-grid opening-chrome" aria-hidden="true" />
 
-        <header className="cockpit-header">
+        <header className="cockpit-header opening-chrome">
           <div className="atlas-brand" aria-label="Atlas Capital">
             <span className="atlas-glyph" aria-hidden="true"><i /></span>
             <span className="atlas-wordmark"><strong>Atlas</strong><em>Capital</em></span>
@@ -428,16 +437,22 @@ function CommandCenterInner() {
         </header>
 
         {error && (
-          <div className="cockpit-alert" role="alert">
+          <div className="cockpit-alert opening-chrome" role="alert">
             <span>System alert</span>
             <p>{error}</p>
             <button type="button" onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
 
-        <EventCard event={state.event} phase={phase} onSubmit={handleScreen} />
-        <PnlCard state={state} onOpen={() => openDrawer("fund")} />
-        <PartnerDock telemetry={state.telemetry} onOpen={() => openDrawer("systems")} />
+        <div className="opening-panel opening-panel-event">
+          <EventCard event={state.event} phase={phase} onSubmit={handleScreen} />
+        </div>
+        <div className="opening-panel opening-panel-pnl">
+          <PnlCard state={state} onOpen={() => openDrawer("fund")} />
+        </div>
+        <div className="opening-panel opening-panel-dock">
+          <PartnerDock telemetry={state.telemetry} onOpen={() => openDrawer("systems")} />
+        </div>
 
           <AnimatePresence>
             {isPlaying && (

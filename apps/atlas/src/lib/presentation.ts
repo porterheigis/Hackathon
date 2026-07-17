@@ -161,7 +161,7 @@ export function getPresentationState(input: {
       ctaLabel: executingStage === "RISK" ? "Checking risk" : "Executing trades",
       ctaAction: "none",
       ctaDisabled: true,
-      requiredPanel: "proposals",
+      requiredPanel: null,
     };
   }
 

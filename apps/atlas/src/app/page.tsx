@@ -230,6 +230,7 @@ function CommandCenterInner() {
     setPhase("simulating");
     setError(null);
     setPlaybackReady(false);
+    setDrawerOpen(false);
 
     const params = new URLSearchParams({
       scenario_id: scenarioId,
@@ -279,6 +280,7 @@ function CommandCenterInner() {
     setRunning(true);
     setPhase("executing");
     setError(null);
+    setDrawerOpen(false);
 
     const params = new URLSearchParams({
       scenario_id: scenarioId,
@@ -353,7 +355,7 @@ function CommandCenterInner() {
 
   const isPlaying = phase === "playing";
   const showTactical =
-    tacticalOverride || (state.viewport === "tactical" && !isPlaying);
+    tacticalOverride || (state.viewport === "tactical" && phase === "simulating");
 
   return (
     <div className="cockpit-shell">

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
+import type { Object3D } from "three";
 import { sampleAssetPosition } from "@/lib/timeline";
 import type {
   PipelineStage,
@@ -60,10 +61,11 @@ interface RingDatum {
 }
 
 interface HtmlDatum {
+  kind: "ticker" | "node";
   lat: number;
   lng: number;
   label: string;
-  delta: number;
+  delta?: number;
 }
 
 interface ObjectDatum {
@@ -80,51 +82,44 @@ const BLUE_MARBLE =
 const TOPOLOGY =
   "//unpkg.com/three-globe/example/img/earth-topology.png";
 
-function makeGlyph(kind: TimelineAsset["kind"]): object {
+function makeGlyph(kind: TimelineAsset["kind"]): Object3D {
   // Lazy-require three so Next build doesn't stall on the three graph
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const THREE = require("three") as typeof import("three");
-  let mesh;
+  const group = new THREE.Group();
+  const cyan = new THREE.MeshLambertMaterial({ color: "#39e7f2", emissive: "#0a5866" });
+  const amber = new THREE.MeshLambertMaterial({ color: "#ff8a32", emissive: "#5a2108" });
+  const red = new THREE.MeshLambertMaterial({ color: "#ff5a4f", emissive: "#50100c" });
+  const steel = new THREE.MeshLambertMaterial({ color: "#c9e8ef", emissive: "#17313b" });
+
   if (kind === "plane") {
-    mesh = new THREE.Mesh(
-      new THREE.ConeGeometry(0.35, 1.2, 4),
-      new THREE.MeshLambertMaterial({
-        color: "#0a84ff",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
-    mesh.rotation.x = Math.PI / 2;
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.18, 1.25, 5), cyan);
+    body.rotation.x = Math.PI / 2;
+    const wings = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.07, 0.24), cyan);
+    wings.position.z = 0.05;
+    group.add(body, wings);
   } else if (kind === "military") {
-    mesh = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.45, 0),
-      new THREE.MeshLambertMaterial({
-        color: "#ff453a",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
-  } else if (kind === "tanker") {
-    mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.2, 1.1),
-      new THREE.MeshLambertMaterial({
-        color: "#ff9f0a",
-        transparent: true,
-        opacity: 0.95,
-      })
-    );
+    group.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.43, 0), red));
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.035, 8, 28), red);
+    group.add(halo);
   } else {
-    mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.16, 0.85),
-      new THREE.MeshLambertMaterial({
-        color: "#ffffff",
-        transparent: true,
-        opacity: 0.85,
-      })
-    );
+    const material = kind === "tanker" ? amber : steel;
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 1.25), material);
+    hull.position.y = -0.02;
+    const bow = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.5, 4), material);
+    bow.rotation.x = Math.PI / 2;
+    bow.position.z = 0.82;
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.23, 0.24), steel);
+    bridge.position.set(0, 0.2, -0.4);
+    group.add(hull, bow, bridge);
+    for (let i = 0; i < 3; i += 1) {
+      const cargo = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.13, 0.22), material);
+      cargo.position.set(0, 0.18, -0.08 + i * 0.25);
+      group.add(cargo);
+    }
   }
-  mesh.scale.setScalar(0.55);
-  return mesh;
+  group.scale.setScalar(0.55);
+  return group;
 }
 
 export default function GlobeView({
@@ -166,6 +161,13 @@ export default function GlobeView({
     g.controls().autoRotate = stage === "IDLE" && !playing;
     g.controls().autoRotateSpeed = 0.25;
     g.controls().enableDamping = true;
+  }, [stage, playing]);
+
+  const handleGlobeReady = useCallback(() => {
+    const globe = globeRef.current;
+    if (!globe) return;
+    globe.pointOfView({ lat: 17, lng: 43, altitude: 1.72 }, 0);
+    globe.controls().autoRotate = stage === "IDLE" && !playing;
   }, [stage, playing]);
 
   useEffect(() => {
@@ -255,7 +257,7 @@ export default function GlobeView({
     return out;
   }, [timeline, t]);
 
-  const objectThreeObject = useCallback((d: object) => {
+  const objectThreeObject = useCallback((d: object): Object3D => {
     return makeGlyph((d as ObjectDatum).kind);
   }, []);
 
@@ -352,7 +354,7 @@ export default function GlobeView({
     ];
   }, [epicenter, nodeMap, stage, playing, t]);
 
-  const htmlEls: HtmlDatum[] = useMemo(() => {
+  const tickerEls: HtmlDatum[] = useMemo(() => {
     if (!tickers.length) return [];
     if (playing && t != null) {
       const count = Math.max(
@@ -360,6 +362,7 @@ export default function GlobeView({
         Math.floor(((t - 0.72) / 0.28) * tickers.length)
       );
       return tickers.slice(0, Math.max(0, count)).map((tk) => ({
+        kind: "ticker" as const,
         lat: tk.lat,
         lng: tk.lng,
         label: tk.label,
@@ -376,12 +379,35 @@ export default function GlobeView({
     return tickers
       .slice(0, Math.max(1, Math.floor(propStep / 2) + 1))
       .map((tk) => ({
+        kind: "ticker" as const,
         lat: tk.lat,
         lng: tk.lng,
         label: tk.label,
         delta: tk.delta_pct,
       }));
   }, [tickers, stage, propStep, playing, t]);
+
+  const htmlEls: HtmlDatum[] = useMemo(() => {
+    const ids = new Set<string>();
+    if (epicenter) ids.add(epicenter);
+    for (const id of visibleNodes) {
+      if (ids.size >= 4) break;
+      ids.add(id);
+    }
+    const labels = Array.from(ids)
+      .map((id) => {
+        const node = nodeMap.get(id);
+        if (!node) return null;
+        return {
+          kind: "node" as const,
+          lat: node.lat,
+          lng: node.lng,
+          label: node.name,
+        };
+      })
+      .filter(Boolean) as HtmlDatum[];
+    return [...labels, ...tickerEls];
+  }, [epicenter, visibleNodes, nodeMap, tickerEls]);
 
   useEffect(() => {
     if (!epicenter || !nodeMap.has(epicenter) || !globeRef.current) return;
@@ -437,11 +463,12 @@ export default function GlobeView({
         ref={globeRef}
         width={dims.w}
         height={dims.h}
-        backgroundColor="#0a0e14"
+        backgroundColor="#02070d"
         globeImageUrl="/earth-night.jpg"
         bumpImageUrl="/earth-topology.png"
-        atmosphereColor="#39d3f5"
-        atmosphereAltitude={0.12}
+        atmosphereColor="#39e7f2"
+        atmosphereAltitude={0.18}
+        onGlobeReady={handleGlobeReady}
         pointsData={points}
         pointAltitude={0.01}
         pointRadius="size"
@@ -468,9 +495,15 @@ export default function GlobeView({
         htmlElement={(d) => {
           const el = document.createElement("div");
           const data = d as HtmlDatum;
-          const up = data.delta >= 0;
+          if (data.kind === "node") {
+            el.className = "globe-node-label";
+            el.textContent = data.label;
+            return el;
+          }
+          const delta = data.delta ?? 0;
+          const up = delta >= 0;
           el.className = "ticker-chip";
-          el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? "#ff453a" : "#30d158"}">${up ? "+" : ""}${data.delta}%</span>`;
+          el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? "#ff8a32" : "#31d9a0"}">${up ? "+" : ""}${delta}%</span>`;
           return el;
         }}
         htmlAltitude={0.02}

@@ -163,7 +163,7 @@ export default function TacticalView({
 
   return (
     <div
-      className="absolute inset-0"
+      className="tactical-stage absolute inset-0"
       style={{
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? "auto" : "none",
@@ -171,7 +171,8 @@ export default function TacticalView({
         zIndex: visible ? 2 : 0,
       }}
     >
-      <div ref={containerRef} className="h-full w-full" />
+      <div className="tactical-fallback" aria-hidden="true" />
+      <div ref={containerRef} className="tactical-map h-full w-full" />
 
       {/* HUD */}
       <div className="pointer-events-none absolute left-3 top-3 font-mono text-[10px] text-white/70">

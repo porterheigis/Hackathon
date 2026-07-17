@@ -106,10 +106,11 @@ Then set `AKASH_SIM_URL=http://127.0.0.1:8080`.
 
 ## Design system
 
-- BG `#0a0e14` · hairline `#1c2430` · cyan `#39d3f5` · amber `#ffb454` · red `#ff5c5c` (denials/losses) · green `#2fd682` (fills/profit)
-- IBM Plex Mono for data; Inter for prose
-- No floating cards, shadows, or decorative gradients (globe atmosphere only)
-- Motion only on data change (150–200ms)
+- Cinematic globe-first cockpit: void `#02070d` · midnight `#07131f` · cyan `#39e7f2` · amber `#ff8a32` · red `#ff5a4f` · mint `#31d9a0`
+- IBM Plex Mono for telemetry and controls; Inter for narrative content
+- Contextual glass HUD cards keep the interactive globe dominant; detailed activity, fund, trade, outcome, and system data lives in the command drawer
+- Six display stages condense the full orchestration state machine: Ingest → Model → Simulate → Risk → Execute → Settle
+- Motion reinforces simulation progress and state transitions; reduced-motion preferences are respected
 
 ---
 

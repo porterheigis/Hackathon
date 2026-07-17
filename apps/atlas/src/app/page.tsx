@@ -20,6 +20,7 @@ import type {
 import { emptyFundState } from "@/lib/store-client";
 import { usePlayback } from "@/lib/usePlayback";
 import { StageRail } from "@/components/StageRail";
+import { SponsorRail } from "@/components/SponsorRail";
 import { AgentTape } from "@/components/AgentTape";
 import { FundPanel } from "@/components/FundPanel";
 import { TelemetryStrip } from "@/components/TelemetryStrip";
@@ -129,7 +130,8 @@ function CommandCenterInner() {
           setWorldModelError(true);
           return;
         }
-        const { _meta: _ignored, ...model } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- strip _meta before storing
+        const { _meta, ...model } = data;
         setWorldModel(model as WorldModel);
         setWorldModelError(false);
       })
@@ -498,6 +500,12 @@ function CommandCenterInner() {
         activeIndex={display.activeIndex}
         current={display.railStage}
       />
+      <SponsorRail
+        tape={state.tape}
+        sources={state.telemetry.sources}
+        currentStage={display.railStage}
+        running={running || phase === "playing"}
+      />
 
       <div className="grid min-h-0 flex-1 grid-cols-12">
         <aside className="col-span-3 flex min-h-0 flex-col border-r border-atlas-hairline">
@@ -560,6 +568,7 @@ function CommandCenterInner() {
             playbackT={isPlaying ? playback.t : null}
             timeline={timeline}
             playing={isPlaying}
+            getT={playback.getT}
           />
           <TacticalView
             worldModel={worldModel}

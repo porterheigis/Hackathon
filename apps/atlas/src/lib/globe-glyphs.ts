@@ -1,6 +1,8 @@
 /**
- * Cached Three.js glyphs for timeline assets — recognizable silhouettes
- * (ship/tanker hulls, aircraft, military markers) with material pooling.
+ * Asset props for globe + tactical map.
+ * Top-down ship/tanker/plane/military silhouettes drawn on canvas, used as:
+ *  - flat textured meshes glued tangent to the globe (heading-oriented)
+ *  - data-URL icons for MapLibre markers (same art on both surfaces)
  */
 
 import type { TimelineAsset } from "@/lib/types";
@@ -17,176 +19,224 @@ function getThree(): ThreeMod {
   return THREE;
 }
 
-const geomCache = new Map<string, unknown>();
-const matCache = new Map<string, unknown>();
-
-function canvasSilhouette(
-  kind: TimelineAsset["kind"],
-  color: string
-): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = 128;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.clearRect(0, 0, 128, 128);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
-  ctx.lineWidth = 2;
-
-  if (kind === "plane") {
-    // Top-down airliner silhouette
-    ctx.beginPath();
-    ctx.moveTo(64, 12);
-    ctx.lineTo(72, 48);
-    ctx.lineTo(118, 58);
-    ctx.lineTo(118, 68);
-    ctx.lineTo(72, 72);
-    ctx.lineTo(70, 108);
-    ctx.lineTo(86, 118);
-    ctx.lineTo(86, 122);
-    ctx.lineTo(64, 116);
-    ctx.lineTo(42, 122);
-    ctx.lineTo(42, 118);
-    ctx.lineTo(58, 108);
-    ctx.lineTo(56, 72);
-    ctx.lineTo(10, 68);
-    ctx.lineTo(10, 58);
-    ctx.lineTo(56, 48);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  } else if (kind === "tanker") {
-    // Long tanker hull with bridge
-    ctx.beginPath();
-    ctx.moveTo(20, 48);
-    ctx.lineTo(108, 48);
-    ctx.quadraticCurveTo(118, 48, 118, 64);
-    ctx.quadraticCurveTo(118, 80, 108, 80);
-    ctx.lineTo(20, 80);
-    ctx.quadraticCurveTo(10, 80, 10, 64);
-    ctx.quadraticCurveTo(10, 48, 20, 48);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(88, 42, 18, 20);
-  } else if (kind === "military") {
-    // Diamond + chevron
-    ctx.beginPath();
-    ctx.moveTo(64, 18);
-    ctx.lineTo(100, 64);
-    ctx.lineTo(64, 110);
-    ctx.lineTo(28, 64);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,0.8)";
-    ctx.beginPath();
-    ctx.moveTo(48, 64);
-    ctx.lineTo(64, 48);
-    ctx.lineTo(80, 64);
-    ctx.stroke();
-  } else {
-    // Container ship
-    ctx.beginPath();
-    ctx.moveTo(18, 52);
-    ctx.lineTo(100, 52);
-    ctx.quadraticCurveTo(114, 52, 114, 64);
-    ctx.quadraticCurveTo(114, 76, 100, 76);
-    ctx.lineTo(18, 76);
-    ctx.quadraticCurveTo(8, 76, 8, 64);
-    ctx.quadraticCurveTo(8, 52, 18, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    for (let i = 0; i < 4; i++) {
-      ctx.fillRect(24 + i * 16, 56, 12, 16);
-    }
-  }
-  return c;
-}
-
-const COLORS: Record<TimelineAsset["kind"], string> = {
-  plane: "#39d3f5",
+export const ASSET_COLORS: Record<TimelineAsset["kind"], string> = {
+  plane: "#7fe3ff",
   tanker: "#ffb454",
   ship: "#e8eef5",
   military: "#ff5c5c",
 };
 
-export function makeAssetGlyph(kind: TimelineAsset["kind"]): object {
-  const T = getThree();
-  const key = `sprite:${kind}`;
-  let mat = matCache.get(key) as import("three").SpriteMaterial | undefined;
-  if (!mat) {
-    const canvas = canvasSilhouette(kind, COLORS[kind]);
-    const tex = new T.CanvasTexture(canvas);
-    tex.needsUpdate = true;
-    mat = new T.SpriteMaterial({
-      map: tex,
-      transparent: true,
-      depthWrite: false,
-      opacity: 0.95,
-    });
-    matCache.set(key, mat);
+const canvasCache = new Map<string, HTMLCanvasElement>();
+const dataUrlCache = new Map<string, string>();
+const textureCache = new Map<string, unknown>();
+
+/**
+ * Draw a top-down silhouette. Nose/bow points UP (canvas top).
+ * 128x128, transparent background, soft glow for readability on satellite/ocean.
+ */
+function iconCanvas(kind: TimelineAsset["kind"]): HTMLCanvasElement {
+  const cached = canvasCache.get(kind);
+  if (cached) return cached;
+
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext("2d")!;
+  const color = ASSET_COLORS[kind];
+  ctx.clearRect(0, 0, 128, 128);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "rgba(10,14,20,0.85)";
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+
+  if (kind === "plane") {
+    // Airliner: fuselage, swept wings, tailplane — nose up
+    ctx.beginPath();
+    ctx.moveTo(64, 8); // nose
+    ctx.quadraticCurveTo(70, 18, 70, 34); // right fuselage
+    ctx.lineTo(71, 52);
+    ctx.lineTo(120, 74); // right wing tip
+    ctx.lineTo(120, 82);
+    ctx.lineTo(71, 68);
+    ctx.lineTo(70, 96); // rear fuselage
+    ctx.lineTo(90, 112); // right tail
+    ctx.lineTo(90, 119);
+    ctx.lineTo(66, 111);
+    ctx.lineTo(64, 122); // tail cone
+    ctx.lineTo(62, 111);
+    ctx.lineTo(38, 119);
+    ctx.lineTo(38, 112);
+    ctx.lineTo(58, 96);
+    ctx.lineTo(57, 68);
+    ctx.lineTo(8, 82);
+    ctx.lineTo(8, 74);
+    ctx.lineTo(57, 52);
+    ctx.lineTo(58, 34);
+    ctx.quadraticCurveTo(58, 18, 64, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (kind === "tanker") {
+    // Long crude carrier: pointed bow up, flat stern, deck piping + aft bridge
+    ctx.beginPath();
+    ctx.moveTo(64, 8); // bow
+    ctx.quadraticCurveTo(82, 26, 82, 48);
+    ctx.lineTo(82, 108);
+    ctx.quadraticCurveTo(82, 118, 72, 118);
+    ctx.lineTo(56, 118);
+    ctx.quadraticCurveTo(46, 118, 46, 108);
+    ctx.lineTo(46, 48);
+    ctx.quadraticCurveTo(46, 26, 64, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Deck details
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(10,14,20,0.45)";
+    ctx.fillRect(58, 34, 12, 4);
+    ctx.fillRect(58, 46, 12, 4);
+    ctx.fillRect(58, 58, 12, 4);
+    ctx.fillRect(58, 70, 12, 4);
+    ctx.fillRect(52, 96, 24, 14); // bridge
+  } else if (kind === "military") {
+    // Naval combatant: sharp bow, angular superstructure
+    ctx.beginPath();
+    ctx.moveTo(64, 6);
+    ctx.lineTo(78, 40);
+    ctx.lineTo(78, 104);
+    ctx.lineTo(70, 120);
+    ctx.lineTo(58, 120);
+    ctx.lineTo(50, 104);
+    ctx.lineTo(50, 40);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(10,14,20,0.5)";
+    ctx.fillRect(56, 50, 16, 22); // superstructure
+    ctx.beginPath();
+    ctx.arc(64, 34, 5, 0, Math.PI * 2); // forward gun
+    ctx.fill();
+  } else {
+    // Container ship: boxy hull, container stacks
+    ctx.beginPath();
+    ctx.moveTo(64, 10);
+    ctx.quadraticCurveTo(80, 24, 80, 44);
+    ctx.lineTo(80, 110);
+    ctx.quadraticCurveTo(80, 118, 70, 118);
+    ctx.lineTo(58, 118);
+    ctx.quadraticCurveTo(48, 118, 48, 110);
+    ctx.lineTo(48, 44);
+    ctx.quadraticCurveTo(48, 24, 64, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(10,14,20,0.5)";
+    for (let row = 0; row < 4; row++) {
+      ctx.fillRect(54, 34 + row * 17, 9, 12);
+      ctx.fillRect(66, 34 + row * 17, 9, 12);
+    }
+    ctx.fillRect(52, 102, 24, 12); // bridge
   }
-  const sprite = new T.Sprite(mat.clone());
-  const scale =
-    kind === "plane" ? 1.8 : kind === "tanker" ? 2.2 : kind === "military" ? 1.6 : 1.9;
-  sprite.scale.set(scale, scale, 1);
-  sprite.userData.kind = kind;
-  return sprite;
+
+  canvasCache.set(kind, c);
+  return c;
 }
 
-/** Low-poly mesh fallback for heading-aware orientation */
-export function makeAssetMesh(kind: TimelineAsset["kind"]): object {
+/** Same art as the globe props, for MapLibre markers */
+export function assetIconDataUrl(kind: TimelineAsset["kind"]): string {
+  const cached = dataUrlCache.get(kind);
+  if (cached) return cached;
+  const url = iconCanvas(kind).toDataURL("image/png");
+  dataUrlCache.set(kind, url);
+  return url;
+}
+
+const ICON_SIZE: Record<TimelineAsset["kind"], number> = {
+  plane: 3.4,
+  tanker: 3.2,
+  ship: 2.9,
+  military: 3.0,
+};
+
+/**
+ * Flat textured mesh lying tangent to the globe.
+ * Geometry rotated so canvas-top (nose) points along +Z = travel direction
+ * when posed with `poseAssetMesh` (up = surface normal, lookAt = ahead).
+ */
+export function makeAssetIcon(kind: TimelineAsset["kind"]): object {
   const T = getThree();
-  let geom = geomCache.get(kind) as import("three").BufferGeometry | undefined;
-  if (!geom) {
-    if (kind === "plane") {
-      // Flat extruded plane shape via thin box + wings
-      const group = new T.Group();
-      const body = new T.Mesh(
-        new T.BoxGeometry(0.2, 0.12, 0.9),
-        new T.MeshLambertMaterial({
-          color: COLORS.plane,
-          transparent: true,
-          opacity: 0.95,
-        })
-      );
-      const wing = new T.Mesh(
-        new T.BoxGeometry(1.1, 0.06, 0.28),
-        new T.MeshLambertMaterial({
-          color: COLORS.plane,
-          transparent: true,
-          opacity: 0.9,
-        })
-      );
-      wing.position.z = 0.05;
-      group.add(body, wing);
-      group.scale.setScalar(0.7);
-      return group;
-    }
-    if (kind === "military") {
-      geom = new T.OctahedronGeometry(0.4, 0);
-    } else if (kind === "tanker") {
-      geom = new T.BoxGeometry(0.32, 0.18, 1.3);
-    } else {
-      geom = new T.BoxGeometry(0.28, 0.14, 0.95);
-    }
-    geomCache.set(kind, geom);
+  let tex = textureCache.get(kind) as import("three").CanvasTexture | undefined;
+  if (!tex) {
+    tex = new T.CanvasTexture(iconCanvas(kind));
+    tex.anisotropy = 4;
+    textureCache.set(kind, tex);
   }
-  const matKey = `mesh:${kind}`;
-  let mat = matCache.get(matKey) as import("three").MeshLambertMaterial | undefined;
-  if (!mat) {
-    mat = new T.MeshLambertMaterial({
-      color: COLORS[kind],
-      transparent: true,
-      opacity: 0.95,
-    });
-    matCache.set(matKey, mat);
-  }
-  const mesh = new T.Mesh(geom, mat.clone());
-  mesh.scale.setScalar(0.6);
+  const size = ICON_SIZE[kind];
+  const geom = new T.PlaneGeometry(size, size);
+  // +Y (canvas top / nose) -> +Z (lookAt forward); plane lies in XZ.
+  // rotateX alone leaves the textured front face pointing -Y (into the
+  // globe), which would show the mirrored back face from outside. rotateZ(PI)
+  // flips the face normal to +Y (outward, along mesh.up = surface normal)
+  // while keeping the nose on +Z.
+  geom.rotateX(Math.PI / 2);
+  geom.rotateZ(Math.PI);
+  const mat = new T.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    side: T.DoubleSide,
+    opacity: 0,
+  });
+  const mesh = new T.Mesh(geom, mat);
+  mesh.visible = false;
+  mesh.renderOrder = 3;
+  mesh.userData.kind = kind;
   return mesh;
+}
+
+export function makeLayerGroup(): object {
+  const T = getThree();
+  return new T.Group();
+}
+
+// Reusable temps for per-frame posing (no GC churn)
+let tmpUp: import("three").Vector3 | null = null;
+let tmpTarget: import("three").Vector3 | null = null;
+
+/**
+ * Pose a prop at world coords, oriented along its path, faded by opacity.
+ */
+export function poseAssetMesh(
+  meshObj: object,
+  coords: { x: number; y: number; z: number },
+  ahead: { x: number; y: number; z: number },
+  opacity: number
+): void {
+  const T = getThree();
+  if (!tmpUp) tmpUp = new T.Vector3();
+  if (!tmpTarget) tmpTarget = new T.Vector3();
+
+  const mesh = meshObj as import("three").Mesh;
+  mesh.position.set(coords.x, coords.y, coords.z);
+  tmpUp.set(coords.x, coords.y, coords.z).normalize();
+  mesh.up.copy(tmpUp);
+  tmpTarget.set(ahead.x, ahead.y, ahead.z);
+  if (tmpTarget.distanceToSquared(mesh.position) > 1e-8) {
+    mesh.lookAt(tmpTarget);
+  }
+  const mat = mesh.material as import("three").MeshBasicMaterial;
+  mat.opacity = Math.max(0, Math.min(1, opacity));
+  mesh.visible = opacity > 0.01;
+}
+
+export function disposeAssetMesh(meshObj: object): void {
+  const mesh = meshObj as import("three").Mesh;
+  mesh.geometry?.dispose();
+  // Textures are cached/shared — only dispose per-mesh material
+  const mat = mesh.material as import("three").Material | undefined;
+  mat?.dispose();
 }

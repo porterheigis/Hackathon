@@ -66,7 +66,10 @@ export function SimTheaterHUD({
         <div className="h-1 overflow-hidden rounded-full bg-white/[0.08]">
           <div
             className="h-full rounded-full bg-atlas-cyan"
-            style={{ width: `${Math.min(100, progress * 100)}%` }}
+            style={{
+              width: `${Math.min(100, progress * 100)}%`,
+              transition: "width 80ms linear",
+            }}
           />
         </div>
 

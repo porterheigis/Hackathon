@@ -112,6 +112,12 @@ export function emptyFundState(mode: "live" | "replay" = "live"): FundState {
       akashProvider: "—",
       akashEndpoint: "—",
       capabilitiesDiscovered: [],
+      sources: {
+        zero: "—",
+        nexla: "—",
+        pomerium: "—",
+        akash: "—",
+      },
     },
     tape: [],
     mode,

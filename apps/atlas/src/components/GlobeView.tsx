@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
-import { makeAssetMesh } from "@/lib/globe-glyphs";
 import {
-  sampleAssetHeading,
+  disposeAssetMesh,
+  makeAssetIcon,
+  makeLayerGroup,
+  poseAssetMesh,
+} from "@/lib/globe-glyphs";
+import {
+  cutWindow,
   sampleAssetOpacity,
   sampleAssetPosition,
   sampleCamera,
@@ -13,7 +18,6 @@ import type {
   PipelineStage,
   PriceTicker,
   SimTimeline,
-  TimelineAsset,
   WorldModel,
 } from "@/lib/types";
 
@@ -32,30 +36,35 @@ interface GlobeViewProps {
   playbackT?: number | null;
   timeline?: SimTimeline | null;
   playing?: boolean;
+  /** Live 60fps playback t for rAF consumers (camera + props) */
+  getT?: () => number;
 }
 
 interface ArcDatum {
+  id: string;
   startLat: number;
   startLng: number;
   endLat: number;
   endLng: number;
   color: string[];
   stroke: number;
-  id: string;
   dashLength: number;
   dashGap: number;
   dashTime: number;
   altitude: number;
   dashInitialGap: number;
+  /** cache of last applied style, to detect changes cheaply */
+  styleKey: string;
 }
 
 interface PointDatum {
+  id: string;
   lat: number;
   lng: number;
   size: number;
   color: string;
   label: string;
-  id: string;
+  styleKey: string;
 }
 
 interface RingDatum {
@@ -75,16 +84,7 @@ interface HtmlDatum {
   delta: number;
 }
 
-interface ObjectDatum {
-  id: string;
-  lat: number;
-  lng: number;
-  alt: number;
-  kind: TimelineAsset["kind"];
-  label: string;
-  heading: number;
-  opacity: number;
-}
+type AssetMesh = ReturnType<typeof makeAssetIcon>;
 
 const BLUE_MARBLE =
   "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
@@ -108,19 +108,6 @@ function revealCount(t: number, total: number): number {
   return Math.max(1, Math.ceil(u * total));
 }
 
-function nodeRevealWeight(
-  id: string,
-  order: string[],
-  t: number,
-  epicenter: string | null
-): number {
-  if (id === epicenter) return 1;
-  const idx = order.indexOf(id);
-  if (idx < 0) return 0;
-  const start = 0.02 + (idx / Math.max(order.length, 1)) * 0.4;
-  return smoothstep(start, start + 0.08, t);
-}
-
 export default function GlobeView({
   worldModel,
   epicenter,
@@ -136,6 +123,7 @@ export default function GlobeView({
   playbackT = null,
   timeline = null,
   playing = false,
+  getT,
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,17 +133,24 @@ export default function GlobeView({
   const tickerEls = useRef(new Map<string, HTMLDivElement>());
   const autoRotateRamp = useRef(0.25);
   const lastCamKey = useRef("");
-  const playingRef = useRef(playing);
-  const timelineRef = useRef(timeline);
-  const epicenterRef = useRef(epicenter);
-  const playbackTRef = useRef(playbackT);
-  const visibleRef = useRef(visible);
 
-  playingRef.current = playing;
-  timelineRef.current = timeline;
-  epicenterRef.current = epicenter;
+  const playbackTRef = useRef(playbackT);
   playbackTRef.current = playbackT;
-  visibleRef.current = visible;
+  const getTRef = useRef(getT);
+  getTRef.current = getT;
+  const liveT = useCallback(() => {
+    const fn = getTRef.current;
+    if (fn) return fn();
+    return playbackTRef.current ?? 0;
+  }, []);
+
+  // Stable datum stores — objects are built once per worldModel and then
+  // MUTATED in place; versions bump so memos hand three-globe the same
+  // object identities and it tweens style changes instead of exit+enter.
+  const arcMapRef = useRef(new Map<string, ArcDatum>());
+  const pointMapRef = useRef(new Map<string, PointDatum>());
+  const [arcVersion, setArcVersion] = useState(0);
+  const [pointVersion, setPointVersion] = useState(0);
 
   // Debounced resize
   useEffect(() => {
@@ -254,20 +249,21 @@ export default function GlobeView({
   }, [worldModel]);
 
   const t = playing && playbackT != null ? playbackT : null;
-  const order = propagationOrder.length ? propagationOrder : affectedNodes;
+  const order = useMemo(
+    () => (propagationOrder.length ? propagationOrder : affectedNodes),
+    [propagationOrder, affectedNodes]
+  );
 
-  const visibleNodes = useMemo(() => {
-    if (t != null && timeline) {
-      const n = revealCount(t, Math.max(order.length, 1));
-      return new Set(order.slice(0, n));
-    }
-    if (!order.length) return new Set<string>();
-    return new Set(order.slice(0, Math.max(1, propStep)));
-  }, [order, propStep, t, timeline]);
-
+  // ---- Discrete style drivers (integers/booleans only — never raw t) ----
+  const revealedCount =
+    t != null
+      ? revealCount(t, Math.max(order.length, 1))
+      : Math.max(1, propStep);
   const laneFrozen = t != null ? t >= 0.05 : stage !== "IDLE";
-  const rerouteMix =
-    t != null ? smoothstep(0.42, 0.52, t) : stage === "PROPOSE" ? 1 : 0;
+  const rerouteOn =
+    t != null
+      ? smoothstep(0.42, 0.52, t) > 0.5
+      : stage === "PROPOSE";
   const wantsAir = selectedOutcomes.includes("air_travel");
   const airThinning =
     wantsAir &&
@@ -275,202 +271,185 @@ export default function GlobeView({
       stage === "SIMULATE" ||
       stage === "PROPOSE" ||
       stage === "AWAITING_APPROVAL");
+  const ringPhase: "on" | "fading" | "off" =
+    t == null ? "on" : t < 0.35 ? "on" : t < 0.55 ? "fading" : "off";
+  const visibleTickerCount =
+    t != null
+      ? tickers.filter(
+          (_, i) => t >= 0.72 + (i / Math.max(tickers.length, 1)) * 0.22
+        ).length
+      : stage === "SIMULATE" ||
+          stage === "PROPOSE" ||
+          stage === "AWAITING_APPROVAL" ||
+          stage === "DONE"
+        ? Math.min(tickers.length, Math.max(1, Math.floor(propStep / 2) + 1))
+        : 0;
 
-  const points: PointDatum[] = useMemo(() => {
-    if (!worldModel) return [];
-    return worldModel.nodes
-      .filter(
-        (n) =>
-          n.type === "chokepoint" ||
-          n.type === "port" ||
-          n.type === "hub" ||
-          n.type === "refinery"
-      )
-      .map((n) => {
-        const isEpi = n.id === epicenter;
-        let weight = 0;
-        if (t != null) {
-          weight = nodeRevealWeight(n.id, order, t, epicenter);
-        } else {
-          weight = visibleNodes.has(n.id) || isEpi ? 1 : 0;
-        }
-        const size = isEpi
-          ? 0.55
-          : 0.12 + weight * 0.22;
-        const color = isEpi
-          ? RED
-          : weight > 0.5
-            ? AMBER
-            : weight > 0
-              ? `rgba(255,180,84,${0.35 + weight * 0.5})`
-              : "rgba(255,255,255,0.22)";
-        return {
-          id: n.id,
-          lat: n.lat,
-          lng: n.lng,
-          size,
-          color,
-          label: n.name,
-        };
-      });
-  }, [worldModel, visibleNodes, epicenter, t, order]);
-
-  const objectsData: ObjectDatum[] = useMemo(() => {
-    if (!timeline || t == null || !visible) return [];
-    const out: ObjectDatum[] = [];
-    for (const asset of timeline.assets) {
-      const opacity = sampleAssetOpacity(asset, t);
-      if (opacity <= 0) continue;
-      const pos = sampleAssetPosition(asset, t);
-      if (!pos) continue;
-      out.push({
-        id: asset.id,
-        lat: pos.lat,
-        lng: pos.lng,
-        alt: pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.012),
-        kind: asset.kind,
-        label: asset.label ?? asset.kind,
-        heading: sampleAssetHeading(asset, t),
-        opacity,
-      });
-    }
-    return out;
-  }, [timeline, t, visible]);
-
-  const objectThreeObject = useCallback((d: object) => {
-    const data = d as ObjectDatum;
-    const mesh = makeAssetMesh(data.kind) as {
-      traverse?: (fn: (o: { material?: { opacity: number; transparent: boolean } }) => void) => void;
-      rotation?: { y: number };
-      material?: { opacity: number; transparent: boolean };
-    };
-    const applyOpacity = (opacity: number) => {
-      if (mesh.traverse) {
-        mesh.traverse((o) => {
-          if (o.material) {
-            o.material.transparent = true;
-            o.material.opacity = opacity;
-          }
-        });
-      } else if (mesh.material) {
-        mesh.material.transparent = true;
-        mesh.material.opacity = opacity;
-      }
-    };
-    applyOpacity(data.opacity);
-    return mesh;
-  }, []);
-
-  const arcs: ArcDatum[] = useMemo(() => {
-    if (!worldModel) return [];
-    return worldModel.edges
-      .map((e) => {
-        const a = nodeMap.get(e.from);
-        const b = nodeMap.get(e.to);
-        if (!a || !b) return null;
+  // ---- Build stable datums ONCE per world model ----
+  useEffect(() => {
+    const arcMap = arcMapRef.current;
+    const pointMap = pointMapRef.current;
+    arcMap.clear();
+    pointMap.clear();
+    if (worldModel) {
+      const nm = new Map(worldModel.nodes.map((n) => [n.id, n]));
+      for (const e of worldModel.edges) {
+        const a = nm.get(e.from);
+        const b = nm.get(e.to);
+        if (!a || !b) continue;
         const isAir = e.lane_type === "air";
-        const disrupted = disruptedEdges.includes(e.id);
-        const hot =
-          (affectedEdges.includes(e.id) || disrupted) &&
-          (visibleNodes.has(e.from) || visibleNodes.has(e.to) || disrupted);
-        const traffic = e.traffic ?? 0.5;
-        const frozen = disrupted && hot && laneFrozen;
-
-        // Grow-in: cold arcs start with gap; hot arcs fill
-        let dashInitialGap = hot ? 0 : 0.35;
-        if (t != null && hot) {
-          const edgeIdx = Math.max(
-            order.indexOf(e.from),
-            order.indexOf(e.to),
-            0
-          );
-          const start = 0.04 + (edgeIdx / Math.max(order.length, 1)) * 0.35;
-          dashInitialGap = 1 - smoothstep(start, start + 0.1, t);
-        }
-
-        let color: string[] = [
-          "rgba(255,255,255,0.07)",
-          "rgba(255,255,255,0.07)",
-        ];
-        let stroke = isAir ? 0.25 : 0.35;
-        let dashTime =
-          stage === "IDLE" && !playing ? 0 : isAir ? 1800 : 2800;
-        let altitude = isAir ? 0.25 : 0.12;
-
-        if (hot && rerouteMix > 0) {
-          const g = rerouteMix;
-          altitude = isAir
-            ? 0.25 + g * 0.1
-            : 0.12 + g * 0.1;
-          color = [
-            `rgba(47,214,130,${0.25 + g * 0.2})`,
-            `rgba(47,214,130,${0.45 + g * 0.35})`,
-          ];
-          stroke = 0.5 + g * 0.45;
-          dashTime = Math.round(2800 - g * 600);
-        } else if (hot) {
-          if (isAir && airThinning) {
-            color = [
-              `rgba(57,211,245,0.18)`,
-              `rgba(57,211,245,0.4)`,
-            ];
-            stroke = 0.18;
-            dashTime = 4000;
-          } else if (frozen) {
-            // Frozen: slow dash rather than hard stop
-            color = [RED, AMBER];
-            stroke = 1.35;
-            dashTime = 12000;
-          } else {
-            color = [AMBER, RED];
-            stroke = 1.05;
-          }
-        } else if (isAir) {
-          color = [
-            "rgba(57,211,245,0.1)",
-            "rgba(57,211,245,0.18)",
-          ];
-        }
-
-        return {
+        arcMap.set(e.id, {
           id: e.id,
           startLat: a.lat,
           startLng: a.lng,
           endLat: b.lat,
           endLng: b.lng,
-          color,
-          stroke,
-          dashLength: isAir ? 0.15 : 0.35 * traffic,
+          color: ["rgba(255,255,255,0.07)", "rgba(255,255,255,0.07)"],
+          stroke: isAir ? 0.25 : 0.35,
+          dashLength: isAir ? 0.15 : 0.35 * (e.traffic ?? 0.5),
           dashGap: isAir ? 0.08 : 0.2,
-          dashTime,
-          altitude,
-          dashInitialGap,
-        };
-      })
-      .filter(Boolean) as ArcDatum[];
+          dashTime: 0,
+          altitude: isAir ? 0.25 : 0.12,
+          dashInitialGap: 0,
+          styleKey: "",
+        });
+      }
+      for (const n of worldModel.nodes) {
+        if (
+          n.type !== "chokepoint" &&
+          n.type !== "port" &&
+          n.type !== "hub" &&
+          n.type !== "refinery"
+        )
+          continue;
+        pointMap.set(n.id, {
+          id: n.id,
+          lat: n.lat,
+          lng: n.lng,
+          size: 0.12,
+          color: "rgba(255,255,255,0.22)",
+          label: n.name,
+          styleKey: "",
+        });
+      }
+    }
+    setArcVersion((v) => v + 1);
+    setPointVersion((v) => v + 1);
+  }, [worldModel]);
+
+  // ---- Style pass: mutate datums in place when discrete state changes ----
+  useEffect(() => {
+    if (!worldModel) return;
+    const revealed = new Set(order.slice(0, revealedCount));
+    if (epicenter) revealed.add(epicenter);
+
+    let pointChanged = false;
+    for (const p of pointMapRef.current.values()) {
+      const isEpi = p.id === epicenter;
+      const on = revealed.has(p.id);
+      const key = `${isEpi ? "e" : on ? "1" : "0"}`;
+      if (key === p.styleKey) continue;
+      p.styleKey = key;
+      p.size = isEpi ? 0.55 : on ? 0.34 : 0.12;
+      p.color = isEpi ? RED : on ? AMBER : "rgba(255,255,255,0.22)";
+      pointChanged = true;
+    }
+    if (pointChanged) setPointVersion((v) => v + 1);
+
+    const disrupted = new Set(disruptedEdges);
+    const affected = new Set(affectedEdges);
+    let arcChanged = false;
+    for (const e of worldModel.edges) {
+      const d = arcMapRef.current.get(e.id);
+      if (!d) continue;
+      const isAir = e.lane_type === "air";
+      const isDisrupted = disrupted.has(e.id);
+      const hot =
+        (affected.has(e.id) || isDisrupted) &&
+        (revealed.has(e.from) || revealed.has(e.to) || isDisrupted);
+      const frozen = isDisrupted && hot && laneFrozen;
+      const idleDash = stage === "IDLE" && !playing;
+
+      const key = [
+        hot ? 1 : 0,
+        frozen ? 1 : 0,
+        rerouteOn && hot ? 1 : 0,
+        airThinning && isAir ? 1 : 0,
+        idleDash ? 1 : 0,
+      ].join("");
+      if (key === d.styleKey) continue;
+      d.styleKey = key;
+
+      let color: string[] = [
+        "rgba(255,255,255,0.07)",
+        "rgba(255,255,255,0.07)",
+      ];
+      let stroke = isAir ? 0.25 : 0.35;
+      let dashTime = idleDash ? 0 : isAir ? 1800 : 2800;
+      let altitude = isAir ? 0.25 : 0.12;
+
+      if (hot && rerouteOn) {
+        altitude = (isAir ? 0.25 : 0.12) + 0.1;
+        color = ["rgba(47,214,130,0.45)", "rgba(47,214,130,0.8)"];
+        stroke = 0.95;
+        dashTime = 2200;
+      } else if (hot) {
+        if (isAir && airThinning) {
+          color = ["rgba(57,211,245,0.18)", "rgba(57,211,245,0.4)"];
+          stroke = 0.18;
+          dashTime = 4000;
+        } else if (frozen) {
+          // Frozen: slow dash rather than hard stop
+          color = [RED, AMBER];
+          stroke = 1.35;
+          dashTime = 12000;
+        } else {
+          color = [AMBER, RED];
+          stroke = 1.05;
+        }
+      } else if (isAir) {
+        color = ["rgba(57,211,245,0.1)", "rgba(57,211,245,0.18)"];
+      }
+
+      d.color = color;
+      d.stroke = stroke;
+      d.dashTime = dashTime;
+      d.altitude = altitude;
+      arcChanged = true;
+    }
+    if (arcChanged) setArcVersion((v) => v + 1);
   }, [
     worldModel,
-    nodeMap,
+    order,
+    revealedCount,
+    laneFrozen,
+    rerouteOn,
+    airThinning,
+    stage,
+    playing,
+    epicenter,
     affectedEdges,
     disruptedEdges,
-    visibleNodes,
-    stage,
-    airThinning,
-    laneFrozen,
-    playing,
-    t,
-    rerouteMix,
-    order,
   ]);
+
+  // Same object identities across renders → three-globe tweens styles
+  const arcs = useMemo(
+    () => Array.from(arcMapRef.current.values()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [arcVersion]
+  );
+  const points = useMemo(
+    () => Array.from(pointMapRef.current.values()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pointVersion]
+  );
 
   const rings: RingDatum[] = useMemo(() => {
     if (!epicenter || !nodeMap.has(epicenter)) return [];
     if (stage === "IDLE" && !playing) return [];
+    if (playing && ringPhase === "off") return [];
     const n = nodeMap.get(epicenter)!;
-    const ringT = t ?? 0.2;
-    if (playing && ringT >= 0.55) return [];
-    const fade = playing ? 1 - smoothstep(0.35, 0.55, ringT) : 1;
-    if (fade <= 0.05) return [];
+    const alpha = playing && ringPhase === "fading" ? 0.3 : 0.65;
     return [
       {
         lat: n.lat,
@@ -478,80 +457,123 @@ export default function GlobeView({
         maxR: 3.5,
         propagationSpeed: 2.2,
         repeatPeriod: 1400,
-        color: `rgba(255,92,92,${0.65 * fade})`,
+        color: `rgba(255,92,92,${alpha})`,
       },
     ];
-  }, [epicenter, nodeMap, stage, playing, t]);
+  }, [epicenter, nodeMap, stage, playing, ringPhase]);
 
   const htmlEls: HtmlDatum[] = useMemo(() => {
-    if (!tickers.length || !visible) return [];
-    if (playing && t != null) {
-      return tickers
-        .map((tk, i) => {
-          const appear = 0.72 + (i / Math.max(tickers.length, 1)) * 0.22;
-          if (t < appear) return null;
-          return {
-            id: tk.node_id || `${tk.label}-${i}`,
-            lat: tk.lat,
-            lng: tk.lng,
-            label: tk.label,
-            delta: tk.delta_pct,
-          };
-        })
-        .filter(Boolean) as HtmlDatum[];
-    }
-    if (
-      stage !== "SIMULATE" &&
-      stage !== "PROPOSE" &&
-      stage !== "AWAITING_APPROVAL" &&
-      stage !== "DONE"
-    )
-      return [];
-    return tickers
-      .slice(0, Math.max(1, Math.floor(propStep / 2) + 1))
-      .map((tk, i) => ({
-        id: tk.node_id || `${tk.label}-${i}`,
-        lat: tk.lat,
-        lng: tk.lng,
-        label: tk.label,
-        delta: tk.delta_pct,
-      }));
-  }, [tickers, stage, propStep, playing, t, visible]);
+    if (!tickers.length || visibleTickerCount <= 0) return [];
+    return tickers.slice(0, visibleTickerCount).map((tk, i) => ({
+      id: tk.node_id || `${tk.label}-${i}`,
+      lat: tk.lat,
+      lng: tk.lng,
+      label: tk.label,
+      delta: tk.delta_pct,
+    }));
+  }, [tickers, visibleTickerCount]);
 
-  // Continuous camera during playback (throttled via React t is ok at 20fps for POV;
-  // we also push every frame while playing for smoother feel)
+  // ---- Per-frame camera outside React ----
   useEffect(() => {
-    if (!globeReady || !globeRef.current) return;
-    if (!playing || t == null || !epicenter || !nodeMap.has(epicenter)) return;
-    if (!visible) return;
-    const n = nodeMap.get(epicenter)!;
+    const g = globeRef.current;
+    if (!g || !globeReady) return;
+    if (!playing || !visible) return;
+    if (!epicenter || !nodeMap.has(epicenter)) return;
+    const epi = nodeMap.get(epicenter)!;
+    const cut = timeline ? cutWindow(timeline) : null;
+
+    g.controls().enabled = false;
     let raf = 0;
-    let lastPush = 0;
-    const loop = (now: number) => {
-      if (!playingRef.current || !visibleRef.current) return;
-      const g = globeRef.current;
-      const epiId = epicenterRef.current;
-      if (!g || !epiId || !nodeMap.has(epiId)) return;
-      const epi = nodeMap.get(epiId)!;
-      const curT = playbackTRef.current ?? t;
-      if (now - lastPush > 32) {
-        lastPush = now;
-        const cam = sampleCamera(curT, epi);
-        const key = `${cam.altitude.toFixed(2)}:${cam.lng.toFixed(1)}`;
-        if (key !== lastCamKey.current) {
-          lastCamKey.current = key;
-          g.pointOfView(cam, 80);
+    const loop = () => {
+      const globe = globeRef.current;
+      if (!globe) return;
+      globe.pointOfView(sampleCamera(liveT(), epi, cut), 0);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      // g captured at effect setup — the globe instance is stable for the
+      // component's lifetime, so re-enabling controls on it is safe.
+      g.controls().enabled = true;
+    };
+  }, [playing, visible, globeReady, epicenter, nodeMap, timeline, liveT]);
+
+  // ---- Asset props: direct scene management (no objectsData churn) ----
+  const assetGroupRef = useRef<{ group: object; meshes: Map<string, AssetMesh> } | null>(null);
+
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady || !timeline) return;
+    // Globe.gl moves the camera (not the globe object) for POV/auto-rotate,
+    // and the ThreeGlobe object sits untransformed in the scene — so a group
+    // added directly to scene() stays geographically glued via getCoords.
+    const scene = g.scene() as unknown as {
+      add: (o: object) => void;
+      remove: (o: object) => void;
+    };
+    const group = makeLayerGroup() as unknown as {
+      add: (o: object) => void;
+      remove: (o: object) => void;
+    };
+    const meshes = new Map<string, AssetMesh>();
+    for (const asset of timeline.assets) {
+      const mesh = makeAssetIcon(asset.kind);
+      group.add(mesh);
+      meshes.set(asset.id, mesh);
+    }
+    scene.add(group);
+    assetGroupRef.current = { group, meshes };
+    return () => {
+      scene.remove(group);
+      for (const mesh of meshes.values()) disposeAssetMesh(mesh);
+      meshes.clear();
+      assetGroupRef.current = null;
+    };
+  }, [globeReady, timeline]);
+
+  // Hide the fleet during the tactical cutaway; keep it frozen after playback
+  useEffect(() => {
+    const entry = assetGroupRef.current;
+    if (!entry) return;
+    (entry.group as { visible: boolean }).visible = visible;
+  }, [visible, globeReady, timeline]);
+
+  // Per-frame prop posing
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady || !timeline || !playing || !visible) return;
+    let raf = 0;
+    const loop = () => {
+      const globe = globeRef.current;
+      const entry = assetGroupRef.current;
+      if (!globe || !entry) return;
+      const curT = liveT();
+      for (const asset of timeline.assets) {
+        const mesh = entry.meshes.get(asset.id);
+        if (!mesh) continue;
+        const op = sampleAssetOpacity(asset, curT);
+        if (op <= 0) {
+          (mesh as { visible: boolean }).visible = false;
+          continue;
         }
+        const pos = sampleAssetPosition(asset, curT);
+        if (!pos) {
+          (mesh as { visible: boolean }).visible = false;
+          continue;
+        }
+        const alt = pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.012);
+        const c = globe.getCoords(pos.lat, pos.lng, alt);
+        const ahead =
+          sampleAssetPosition(asset, Math.min(1, curT + 0.004)) ?? pos;
+        const c2 = globe.getCoords(ahead.lat, ahead.lng, alt);
+        poseAssetMesh(mesh, c, c2, op);
       }
       raf = requestAnimationFrame(loop);
     };
-    // Initial fly
-    const cam0 = sampleCamera(t, n);
-    globeRef.current.pointOfView(cam0, 600);
-    lastCamKey.current = `${cam0.altitude.toFixed(2)}:${cam0.lng.toFixed(1)}`;
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playing, globeReady, epicenter, nodeMap, visible, t]);
+  }, [playing, visible, globeReady, timeline, liveT]);
 
   // Non-playback epicenter fly (once)
   useEffect(() => {
@@ -574,17 +596,6 @@ export default function GlobeView({
     }
   }, [stage, playing, globeReady]);
 
-  // Align to epicenter before tactical cutaway (when becoming hidden)
-  useEffect(() => {
-    if (visible || !globeRef.current || !epicenter || !nodeMap.has(epicenter))
-      return;
-    const n = nodeMap.get(epicenter)!;
-    globeRef.current.pointOfView(
-      { lat: n.lat, lng: n.lng, altitude: 0.85 },
-      400
-    );
-  }, [visible, epicenter, nodeMap]);
-
   const htmlElement = useCallback((d: object) => {
     const data = d as HtmlDatum;
     let el = tickerEls.current.get(data.id);
@@ -604,8 +615,11 @@ export default function GlobeView({
       className="relative h-full w-full bg-atlas-bg"
       style={{
         opacity: visible ? 1 : 0,
+        transform: visible ? "scale(1)" : "scale(1.12)",
         pointerEvents: visible ? "auto" : "none",
-        transition: "opacity 500ms ease-out",
+        transition:
+          "opacity 650ms ease-out, transform 900ms cubic-bezier(0.4, 0, 0.2, 1)",
+        willChange: "opacity, transform",
         zIndex: visible ? 1 : 0,
       }}
       aria-hidden={!visible}
@@ -620,12 +634,13 @@ export default function GlobeView({
         atmosphereColor="#6eb6ff"
         atmosphereAltitude={0.15}
         onGlobeReady={() => setGlobeReady(true)}
-        pointsData={visible ? points : []}
+        pointsData={points}
         pointAltitude={0.015}
         pointRadius="size"
         pointColor="color"
         pointLabel={(d) => (d as PointDatum).label}
-        arcsData={visible ? arcs : []}
+        pointsTransitionDuration={400}
+        arcsData={arcs}
         arcColor="color"
         arcStroke="stroke"
         arcAltitude="altitude"
@@ -633,21 +648,15 @@ export default function GlobeView({
         arcDashGap="dashGap"
         arcDashAnimateTime="dashTime"
         arcDashInitialGap="dashInitialGap"
-        ringsData={visible ? rings : []}
-        ringColor={(d) => (d as RingDatum).color ?? "rgba(255,92,92,0.65)"}
+        arcsTransitionDuration={600}
+        ringsData={rings}
+        ringColor={(d: object) =>
+          (d as RingDatum).color ?? "rgba(255,92,92,0.65)"
+        }
         ringMaxRadius="maxR"
         ringPropagationSpeed="propagationSpeed"
         ringRepeatPeriod="repeatPeriod"
-        objectsData={visible ? objectsData : []}
-        objectLat="lat"
-        objectLng="lng"
-        objectAltitude="alt"
-        objectThreeObject={objectThreeObject}
-        objectLabel={(d) => (d as ObjectDatum).label}
-        objectRotation={(d) => ({
-          y: (d as ObjectDatum).heading,
-        })}
-        htmlElementsData={visible ? htmlEls : []}
+        htmlElementsData={htmlEls}
         htmlElement={htmlElement}
         htmlAltitude={0.04}
       />

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type Map as MapLibreMap, type Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
+import { ASSET_COLORS, assetIconDataUrl } from "@/lib/globe-glyphs";
 import {
+  cutWindow,
   sampleAssetHeading,
   sampleAssetOpacity,
   sampleAssetPosition,
@@ -50,35 +52,37 @@ function circlePolygon(
 const ESRI =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-const KIND_COLOR: Record<TimelineAsset["kind"], string> = {
-  tanker: "#ffb454",
-  ship: "#e8eef5",
-  plane: "#39d3f5",
-  military: "#ff5c5c",
+const MARKER_SIZE: Record<TimelineAsset["kind"], number> = {
+  plane: 26,
+  tanker: 24,
+  ship: 22,
+  military: 22,
 };
 
+/** Same silhouette art as the globe props, rotated by heading */
 function makeMarkerEl(
   kind: TimelineAsset["kind"],
   heading: number,
   label: string
 ): HTMLDivElement {
+  const size = MARKER_SIZE[kind];
   const wrap = document.createElement("div");
-  wrap.style.width = "18px";
-  wrap.style.height = "18px";
+  wrap.style.width = `${size}px`;
+  wrap.style.height = `${size}px`;
   wrap.style.display = "flex";
   wrap.style.alignItems = "center";
   wrap.style.justifyContent = "center";
   wrap.title = label;
 
-  const el = document.createElement("div");
-  el.style.width = kind === "plane" ? "10px" : "12px";
-  el.style.height = kind === "plane" ? "14px" : "7px";
-  el.style.background = KIND_COLOR[kind];
-  el.style.border = "1px solid rgba(255,255,255,0.55)";
-  el.style.boxShadow = `0 0 8px ${KIND_COLOR[kind]}88`;
-  el.style.borderRadius = kind === "plane" ? "2px 2px 40% 40%" : "2px";
+  const el = document.createElement("img");
+  el.src = assetIconDataUrl(kind);
+  el.style.width = "100%";
+  el.style.height = "100%";
+  el.style.filter = `drop-shadow(0 0 6px ${ASSET_COLORS[kind]})`;
   el.style.transform = `rotate(${heading}deg)`;
   el.style.transition = "transform 120ms linear, opacity 200ms ease";
+  el.draggable = false;
+  el.alt = label;
   wrap.appendChild(el);
   wrap.dataset.kind = kind;
   return wrap;
@@ -116,6 +120,7 @@ export default function TacticalView({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const markers = markersRef.current;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
@@ -139,8 +144,8 @@ export default function TacticalView({
     mapRef.current = map;
     map.on("load", () => setReady(true));
     return () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current.clear();
+      markers.forEach((m) => m.remove());
+      markers.clear();
       map.remove();
       mapRef.current = null;
     };
@@ -154,17 +159,17 @@ export default function TacticalView({
     if (visible && !lastVisible.current) {
       map.resize();
       if (epicenterNode) {
-        // Start wide then push in
+        // Continue the globe's dive: start high, push down to the deck
         map.jumpTo({
           center: [epicenterNode.lng, epicenterNode.lat],
-          zoom: 4.2,
+          zoom: 4.8,
         });
         map.flyTo({
           center: [epicenterNode.lng, epicenterNode.lat],
-          zoom: 7.4,
-          duration: 1400,
+          zoom: 7.5,
+          duration: 1600,
           essential: true,
-          curve: 1.2,
+          curve: 1.25,
         });
       }
     }
@@ -175,6 +180,23 @@ export default function TacticalView({
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [visible, ready, epicenterNode]);
+
+  // Exit choreography: pull back out before the crossfade to the globe
+  const exitPulledRef = useRef(false);
+  useEffect(() => {
+    if (!visible) {
+      exitPulledRef.current = false;
+      return;
+    }
+    const map = mapRef.current;
+    if (!map || !ready || !timeline || playbackT == null) return;
+    const cut = cutWindow(timeline);
+    if (!cut) return;
+    if (playbackT >= cut.end - 0.045 && !exitPulledRef.current) {
+      exitPulledRef.current = true;
+      map.easeTo({ zoom: 5.0, duration: 900 });
+    }
+  }, [playbackT, visible, ready, timeline]);
 
   // AOI geofence
   useEffect(() => {
@@ -262,7 +284,11 @@ export default function TacticalView({
             asset.label ?? asset.kind
           );
           el.style.opacity = "0";
-          const marker = new maplibregl.Marker({ element: el })
+          const marker = new maplibregl.Marker({
+            element: el,
+            rotationAlignment: "map",
+            pitchAlignment: "map",
+          })
             .setLngLat([pos.lng, pos.lat])
             .addTo(map);
           markersRef.current.set(asset.id, marker);
@@ -284,7 +310,11 @@ export default function TacticalView({
         const lng =
           epicenterNode.lng + Math.sin(ang) * (0.45 + (i % 3) * 0.2);
         const el = makeMarkerEl("tanker", (ang * 180) / Math.PI, `Vessel ${i + 1}`);
-        const marker = new maplibregl.Marker({ element: el })
+        const marker = new maplibregl.Marker({
+          element: el,
+          rotationAlignment: "map",
+          pitchAlignment: "map",
+        })
           .setLngLat([lng, lat])
           .addTo(map);
         markersRef.current.set(id, marker);
@@ -326,8 +356,11 @@ export default function TacticalView({
       className="absolute inset-0"
       style={{
         opacity: visible ? 1 : 0,
+        transform: visible ? "scale(1)" : "scale(0.94)",
         pointerEvents: visible ? "auto" : "none",
-        transition: "opacity 600ms ease-out",
+        transition:
+          "opacity 650ms ease-out, transform 900ms cubic-bezier(0.4, 0, 0.2, 1)",
+        willChange: "opacity, transform",
         zIndex: visible ? 2 : 0,
       }}
       aria-hidden={!visible}

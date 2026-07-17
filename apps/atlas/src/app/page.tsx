@@ -105,15 +105,15 @@ function CommandCenterInner() {
   // Tactical cutaway during playback based on timeline events
   useEffect(() => {
     if (phase !== "playing" || !timeline) {
-      setTacticalOverride(false);
+      setTacticalOverride((prev) => (prev ? false : prev));
       return;
     }
     const t = playback.t;
     const cutStart = timeline.events.find((e) => e.kind === "tactical_cutaway");
     const cutEnd = timeline.events.find((e) => e.kind === "tactical_end");
-    if (cutStart && cutEnd) {
-      setTacticalOverride(t >= cutStart.t && t < cutEnd.t);
-    }
+    if (!cutStart || !cutEnd) return;
+    const next = t >= cutStart.t && t < cutEnd.t;
+    setTacticalOverride((prev) => (prev === next ? prev : next));
   }, [phase, timeline, playback.t]);
 
   const fail = useCallback((message: string, recover: Phase) => {

@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { AnimatePresence } from "framer-motion";
@@ -38,6 +45,17 @@ const TacticalView = dynamic(() => import("@/components/TacticalView"), {
   ssr: false,
 });
 
+const RECOVER_STAGE: Record<Phase, PipelineStage> = {
+  idle: "IDLE",
+  screening: "IDLE",
+  awaiting_outcomes: "AWAITING_OUTCOMES",
+  simulating: "AWAITING_OUTCOMES",
+  playing: "AWAITING_APPROVAL",
+  awaiting_approval: "AWAITING_APPROVAL",
+  executing: "AWAITING_APPROVAL",
+  done: "DONE",
+};
+
 function CommandCenterInner() {
   const searchParams = useSearchParams();
   const replayParam = searchParams.get("replay") === "1";
@@ -55,10 +73,15 @@ function CommandCenterInner() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("activity");
 
+  const esRef = useRef<EventSource | null>(null);
+  const genRef = useRef(0);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
   const timeline = state.sim?.timeline ?? null;
 
   const onPlaybackDone = useCallback(() => {
-    setPhase("awaiting_approval");
+    setPhase(modeRef.current === "replay" ? "done" : "awaiting_approval");
     setRunning(false);
     setTacticalOverride(false);
     setPlaybackReady(false);
@@ -72,7 +95,11 @@ function CommandCenterInner() {
   useEffect(() => {
     fetch("/api/world-model")
       .then((r) => r.json())
-      .then((data: WorldModel) => setWorldModel(data))
+      .then((data: WorldModel & { error?: string; _meta?: unknown }) => {
+        if (data.error || !Array.isArray(data.nodes)) return;
+        const { _meta: _ignored, ...model } = data;
+        setWorldModel(model as WorldModel);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -96,26 +123,50 @@ function CommandCenterInner() {
     const cutStart = timeline.events.find((e) => e.kind === "tactical_cutaway");
     const cutEnd = timeline.events.find((e) => e.kind === "tactical_end");
     if (!cutStart || !cutEnd) return;
-    const next = t >= cutStart.t && t < cutEnd.t;
+    const duration =
+      typeof cutStart.payload?.duration === "number"
+        ? cutStart.payload.duration
+        : cutEnd.t - cutStart.t;
+    const next = t >= cutStart.t && t < cutStart.t + duration;
     setTacticalOverride((prev) => (prev === next ? prev : next));
   }, [phase, timeline, playback.t]);
 
-  const fail = useCallback((message: string, recover: Phase) => {
-    setError(message);
-    setRunning(false);
-    setPhase(recover);
-    setPlaybackReady(false);
-    setTacticalOverride(false);
+  const closeStream = useCallback(() => {
+    esRef.current?.close();
+    esRef.current = null;
   }, []);
 
-  // Auto-run full pipeline in replay mode — still plays shortened cinematic
+  const fail = useCallback(
+    (message: string, recover: Phase) => {
+      setError(message);
+      setRunning(false);
+      setPhase(recover);
+      setPlaybackReady(false);
+      setTacticalOverride(false);
+      setState((prev) => ({
+        ...prev,
+        stage: RECOVER_STAGE[recover],
+        clearance: prev.clearance === "DENIED" ? "TRADER" : prev.clearance,
+      }));
+      closeStream();
+    },
+    [closeStream]
+  );
+
+  // Auto-run the full pipeline in replay mode, but keep the stream open until
+  // the orchestrator emits its single terminal event.
   useEffect(() => {
     if (!replayParam) return;
+    const gen = ++genRef.current;
+    let settled = false;
     setRunning(true);
     setPhase("simulating");
     setError(null);
+
     const es = new EventSource("/api/simulate?replay=1");
+    esRef.current = es;
     es.onmessage = (msg) => {
+      if (gen !== genRef.current) return;
       try {
         const event = JSON.parse(msg.data) as OrchestratorEvent;
         if (event.type === "state") {
@@ -126,41 +177,53 @@ function CommandCenterInner() {
           if (s.proposals?.length)
             setSelectedProposals(s.proposals.map((p) => p.id));
         } else if (event.type === "done") {
+          // Phase completion is intermediate during a full replay.
           const s = event.payload as FundState;
           setState(s);
           if (s.affectedOutcomes?.length)
             setSelectedOutcomes(s.affectedOutcomes.map((o) => o.id));
           if (s.proposals?.length)
             setSelectedProposals(s.proposals.map((p) => p.id));
-          // Replay pipeline continues to execute after playback in a chained way —
-          // for replay=1 the API already ran full pipeline. Show playback then settle.
-          if (s.sim?.timeline && s.stage !== "DONE") {
-            setPhase("playing");
-            setPlaybackReady(true);
-          } else if (s.sim?.timeline) {
-            // Full pipeline done: still show a quick playback before settled view
+        } else if (event.type === "pipeline_done") {
+          settled = true;
+          const s = event.payload as FundState;
+          setState(s);
+          if (s.affectedOutcomes?.length)
+            setSelectedOutcomes(s.affectedOutcomes.map((o) => o.id));
+          if (s.proposals?.length)
+            setSelectedProposals(s.proposals.map((p) => p.id));
+          if (s.sim?.timeline) {
             setPhase("playing");
             setPlaybackReady(true);
           } else {
             setRunning(false);
             setPhase("done");
           }
-          es.close();
+          closeStream();
         } else if (event.type === "error") {
+          settled = true;
           fail(String(event.payload ?? "Replay failed"), "idle");
-          es.close();
         }
       } catch {
         /* */
       }
     };
     es.onerror = () => {
+      if (settled || gen !== genRef.current) return;
+      settled = true;
       fail("Connection lost during replay", "idle");
-      es.close();
     };
-  }, [replayParam, fail]);
+
+    return () => {
+      settled = true;
+      if (gen === genRef.current) closeStream();
+      else es.close();
+    };
+  }, [replayParam, fail, closeStream]);
 
   const handleNewScenario = useCallback(() => {
+    genRef.current += 1;
+    closeStream();
     setState(emptyFundState(mode));
     setSelectedOutcomes([]);
     setSelectedProposals([]);
@@ -171,11 +234,14 @@ function CommandCenterInner() {
     setTacticalOverride(false);
     setDrawerOpen(false);
     playback.reset();
-  }, [mode, playback]);
+  }, [mode, playback, closeStream]);
 
   const handleScreen = useCallback(
     (opts: { text?: string; preset_id?: string }) => {
       if (running) return;
+      const gen = ++genRef.current;
+      let settled = false;
+      closeStream();
       setRunning(true);
       setPhase("screening");
       setState(emptyFundState(mode));
@@ -190,17 +256,20 @@ function CommandCenterInner() {
       if (mode === "replay") params.set("replay", "1");
 
       const es = new EventSource(`/api/screen?${params.toString()}`);
+      esRef.current = es;
       es.onmessage = (msg) => {
+        if (gen !== genRef.current) return;
         try {
           const event = JSON.parse(msg.data) as OrchestratorEvent;
           if (event.type === "state" || event.type === "done") {
             const s = event.payload as FundState;
             setState(s);
             if (event.type === "done") {
+              settled = true;
               setRunning(false);
               setPhase("awaiting_outcomes");
               setSelectedOutcomes(s.affectedOutcomes.map((o) => o.id));
-              es.close();
+              closeStream();
             }
           } else if (event.type === "stage") {
             setState((prev) => ({
@@ -208,24 +277,28 @@ function CommandCenterInner() {
               stage: event.payload as PipelineStage,
             }));
           } else if (event.type === "error") {
+            settled = true;
             fail(String(event.payload ?? "Screen failed"), "idle");
-            es.close();
           }
         } catch {
           /* */
         }
       };
       es.onerror = () => {
+        if (settled || gen !== genRef.current) return;
+        settled = true;
         fail("Connection lost while screening", "idle");
-        es.close();
       };
     },
-    [running, mode, fail]
+    [running, mode, fail, closeStream]
   );
 
   const handleSimulate = useCallback(() => {
     const scenarioId = state.scenario?.scenario_id;
     if (!scenarioId || !selectedOutcomes.length || running) return;
+    const gen = ++genRef.current;
+    let settled = false;
+    closeStream();
     setRunning(true);
     setPhase("simulating");
     setError(null);
@@ -237,13 +310,16 @@ function CommandCenterInner() {
       outcomes: selectedOutcomes.join(","),
     });
     const es = new EventSource(`/api/simulate?${params.toString()}`);
+    esRef.current = es;
     es.onmessage = (msg) => {
+      if (gen !== genRef.current) return;
       try {
         const event = JSON.parse(msg.data) as OrchestratorEvent;
         if (event.type === "state") {
           const s = event.payload as FundState;
           setState(s);
         } else if (event.type === "done") {
+          settled = true;
           const s = event.payload as FundState;
           setState(s);
           setSelectedProposals(s.proposals.map((p) => p.id));
@@ -254,29 +330,39 @@ function CommandCenterInner() {
             setRunning(false);
             setPhase("awaiting_approval");
           }
-          es.close();
+          closeStream();
         } else if (event.type === "stage") {
           setState((prev) => ({
             ...prev,
             stage: event.payload as PipelineStage,
           }));
         } else if (event.type === "error") {
+          settled = true;
           fail(String(event.payload ?? "Simulation failed"), "awaiting_outcomes");
-          es.close();
         }
       } catch {
         /* */
       }
     };
     es.onerror = () => {
+      if (settled || gen !== genRef.current) return;
+      settled = true;
       fail("Connection lost during simulation", "awaiting_outcomes");
-      es.close();
     };
-  }, [state.scenario?.scenario_id, selectedOutcomes, running, fail]);
+  }, [
+    state.scenario?.scenario_id,
+    selectedOutcomes,
+    running,
+    fail,
+    closeStream,
+  ]);
 
   const handleExecute = useCallback(() => {
     const scenarioId = state.scenario?.scenario_id;
     if (!scenarioId || !selectedProposals.length || running) return;
+    const gen = ++genRef.current;
+    let settled = false;
+    closeStream();
     setRunning(true);
     setPhase("executing");
     setError(null);
@@ -287,15 +373,18 @@ function CommandCenterInner() {
       proposal_ids: selectedProposals.join(","),
     });
     const es = new EventSource(`/api/execute?${params.toString()}`);
+    esRef.current = es;
     es.onmessage = (msg) => {
+      if (gen !== genRef.current) return;
       try {
         const event = JSON.parse(msg.data) as OrchestratorEvent;
         if (event.type === "state" || event.type === "done") {
           setState(event.payload as FundState);
           if (event.type === "done") {
+            settled = true;
             setRunning(false);
             setPhase("done");
-            es.close();
+            closeStream();
           }
         } else if (event.type === "stage") {
           setState((prev) => ({
@@ -303,18 +392,25 @@ function CommandCenterInner() {
             stage: event.payload as PipelineStage,
           }));
         } else if (event.type === "error") {
+          settled = true;
           fail(String(event.payload ?? "Execution failed"), "awaiting_approval");
-          es.close();
         }
       } catch {
         /* */
       }
     };
     es.onerror = () => {
+      if (settled || gen !== genRef.current) return;
+      settled = true;
       fail("Connection lost during execution", "awaiting_approval");
-      es.close();
     };
-  }, [state.scenario?.scenario_id, selectedProposals, running, fail]);
+  }, [
+    state.scenario?.scenario_id,
+    selectedProposals,
+    running,
+    fail,
+    closeStream,
+  ]);
 
   const presentation = useMemo(
     () =>
@@ -354,8 +450,7 @@ function CommandCenterInner() {
   }, [presentation, handleSimulate, handleExecute, handleNewScenario]);
 
   const isPlaying = phase === "playing";
-  const showTactical =
-    tacticalOverride || (state.viewport === "tactical" && phase === "simulating");
+  const showTactical = tacticalOverride;
 
   return (
     <div className="cockpit-shell">
@@ -398,6 +493,8 @@ function CommandCenterInner() {
             vesselCount={state.sim?.vessel_count ?? 0}
             visible={showTactical}
             eventTitle={state.event?.title ?? null}
+            timeline={timeline}
+            playbackT={isPlaying ? playback.t : null}
           />
         </div>
         <div className="scene-vignette" aria-hidden="true" />

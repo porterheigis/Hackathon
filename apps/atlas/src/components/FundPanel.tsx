@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import type { FundState } from "@/lib/types";
 
 interface FundPanelProps {
@@ -29,28 +30,34 @@ export function FundPanel({
       : fills.reduce((a, f) => a + (f.size_usd ?? 0) * 0.05, 0);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <section className="border-b border-white/[0.08] px-3 py-3">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-atlas">
+        <section className="border-b border-atlas-hairline px-3 py-3">
           <p className="eyebrow">Zero wallet</p>
           <p className="mt-1 font-mono text-2xl tabular text-white">
             {money(state.telemetry.zeroWalletUsd)}
           </p>
-          <p className="mt-1 font-mono text-[11px] tabular text-white/35">
+          <p className="mt-1 font-mono text-[11px] tabular text-white/45">
             Spend {money(state.telemetry.zeroSpendUsd)}
           </p>
         </section>
 
-        <section className="border-b border-white/[0.08] px-3 py-3">
+        <section className="border-b border-atlas-hairline px-3 py-3">
           <p className="eyebrow">Simulation EV</p>
           {!state.sim ? (
-            <p className="mt-2 text-[12px] text-white/30">
+            <p className="mt-2 text-[12px] text-white/45">
               Awaiting simulation
             </p>
           ) : (
             <table className="mt-2 w-full font-mono text-[11px]">
               <thead>
-                <tr className="text-left text-white/30">
+                <tr className="text-left text-white/45">
                   <th className="pb-1 font-medium">Market</th>
                   <th className="pb-1 text-right font-medium">Edge</th>
                   <th className="pb-1 text-right font-medium">Conf</th>
@@ -72,7 +79,7 @@ export function FundPanel({
                     >
                       {(m.edge ?? 0).toFixed(3)}
                     </td>
-                    <td className="py-1 text-right tabular text-white/35">
+                    <td className="py-1 text-right tabular text-white/45">
                       {m.confidence.toFixed(2)}
                     </td>
                   </tr>
@@ -82,11 +89,11 @@ export function FundPanel({
           )}
         </section>
 
-        <section className="border-b border-white/[0.08] px-3 py-3">
+        <section className="border-b border-atlas-hairline px-3 py-3">
           <p className="eyebrow">Position book</p>
           {fills.length === 0 && denials.length === 0 ? (
-            <p className="mt-2 text-[12px] text-white/30">
-              No positions yet — run a simulation.
+            <p className="mt-2 text-[12px] text-white/45">
+              No fills yet — approve proposed trades to execute.
             </p>
           ) : (
             <ul className="mt-2 space-y-2">
@@ -119,7 +126,7 @@ export function FundPanel({
       </div>
 
       {showNewScenario && onNewScenario && (
-        <div className="border-t border-white/[0.08] p-3">
+        <div className="border-t border-atlas-hairline p-3">
           <button
             type="button"
             className="btn-primary w-full py-2.5 text-[13px]"
@@ -129,6 +136,6 @@ export function FundPanel({
           </button>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

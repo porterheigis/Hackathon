@@ -21,6 +21,12 @@ function PartnerMark({ id }: { id: (typeof PARTNERS)[number]["id"] }) {
   return <span className="partner-mark pomerium-mark"><i>◆</i></span>;
 }
 
+function sourceMode(source: string): string {
+  if (source.includes("live")) return "live";
+  if (source.includes("local") || source.includes("fixture")) return "local";
+  return "standby";
+}
+
 export function PartnerDock({ telemetry, onOpen }: PartnerDockProps) {
   const status: Record<(typeof PARTNERS)[number]["id"], string> = {
     zero: `$${telemetry.zeroSpendUsd.toFixed(2)}`,
@@ -35,7 +41,9 @@ export function PartnerDock({ telemetry, onOpen }: PartnerDockProps) {
         <button key={partner.id} type="button" className="partner-tile hud-panel" onClick={onOpen}>
           <PartnerMark id={partner.id} />
           <span>{partner.label}</span>
-          <small>{status[partner.id]}</small>
+          <small>
+            {status[partner.id]} · {sourceMode(telemetry.sources[partner.id])}
+          </small>
         </button>
       ))}
     </div>

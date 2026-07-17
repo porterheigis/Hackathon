@@ -10,6 +10,7 @@ interface ProposalPanelProps {
   onExecute: () => void;
   loading?: boolean;
   denial?: string | null;
+  onNewScenario?: () => void;
 }
 
 export function ProposalPanel({
@@ -19,73 +20,90 @@ export function ProposalPanel({
   onExecute,
   loading,
   denial,
+  onNewScenario,
 }: ProposalPanelProps) {
   if (!proposals.length) {
     return (
-      <div className="px-3 py-4 text-[12px] text-white/30">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="px-3 py-4 text-[12px] text-white/45"
+      >
         No positions yet — run a simulation.
-      </div>
+      </motion.div>
     );
   }
 
   const toggle = (id: string) => {
+    if (loading) return;
     if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
     else onChange([...selected, id]);
   };
 
-  const selectAll = () => onChange(proposals.map((p) => p.id));
-  const selectNone = () => onChange([]);
+  const selectAll = () => {
+    if (!loading) onChange(proposals.map((p) => p.id));
+  };
+  const selectNone = () => {
+    if (!loading) onChange([]);
+  };
 
   const totalStake = proposals
     .filter((p) => selected.includes(p.id))
     .reduce((sum, p) => sum + p.size_usd, 0);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-2">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="flex items-center justify-between border-b border-atlas-hairline px-3 py-2">
         <p className="eyebrow">Proposed trades</p>
         <div className="flex items-center gap-2 text-[11px]">
           <button
             type="button"
-            className="text-white/40 hover:text-white/70"
+            className="text-white/45 hover:text-white/70 focus-visible:outline focus-visible:outline-1 focus-visible:outline-atlas-cyan disabled:opacity-40"
             onClick={selectAll}
+            disabled={loading}
           >
             All
           </button>
           <span className="text-white/15">·</span>
           <button
             type="button"
-            className="text-white/40 hover:text-white/70"
+            className="text-white/45 hover:text-white/70 focus-visible:outline focus-visible:outline-1 focus-visible:outline-atlas-cyan disabled:opacity-40"
             onClick={selectNone}
+            disabled={loading}
           >
             None
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-        {proposals.map((p, i) => {
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 scrollbar-atlas">
+        {proposals.map((p) => {
           const on = selected.includes(p.id);
           return (
-            <motion.button
+            <button
               key={p.id}
               type="button"
-              layout
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04, duration: 0.2 }}
               onClick={() => toggle(p.id)}
+              disabled={loading}
               aria-pressed={on}
-              className={`w-full rounded-[10px] border p-3 text-left transition-colors ${
+              className={`w-full rounded-[10px] border p-3 text-left transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-atlas-cyan disabled:opacity-60 ${
                 on
-                  ? "border-atlas-accent/40 bg-atlas-accent/10"
-                  : "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04]"
-              } ${denial && i === 0 ? "deny-pulse border-atlas-red/50" : ""}`}
+                  ? "border-atlas-cyan/40 bg-atlas-cyan/10"
+                  : "border-atlas-hairline bg-white/[0.02] hover:bg-white/[0.04]"
+              }`}
             >
               <div className="flex items-start gap-2">
                 <span
                   className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
                     on
-                      ? "border-atlas-accent bg-atlas-accent text-white"
+                      ? "border-atlas-cyan bg-atlas-cyan text-atlas-bg"
                       : "border-white/20 text-transparent"
                   }`}
                 >
@@ -105,15 +123,15 @@ export function ProposalPanel({
                       {p.ev.toFixed(3)}
                     </span>
                   </div>
-                  <div className="mt-2 flex items-center gap-3 font-mono text-[10px] text-white/40">
+                  <div className="mt-2 flex items-center gap-3 font-mono text-[10px] text-white/45">
                     <span>{p.side}</span>
                     <span>${p.size_usd.toFixed(2)}</span>
                     <span>conf {(p.confidence * 100).toFixed(0)}%</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-white/35">{p.rationale}</p>
+                  <p className="mt-1.5 text-[11px] text-white/45">{p.rationale}</p>
                 </div>
               </div>
-            </motion.button>
+            </button>
           );
         })}
       </div>
@@ -122,7 +140,7 @@ export function ProposalPanel({
           {denial}
         </div>
       )}
-      <div className="border-t border-white/[0.08] p-3">
+      <div className="space-y-2 border-t border-atlas-hairline p-3">
         <button
           type="button"
           className="btn-primary w-full py-2.5 text-[13px]"
@@ -133,7 +151,17 @@ export function ProposalPanel({
             ? "Executing…"
             : `Execute selected (${selected.length}) · $${totalStake.toFixed(2)}`}
         </button>
+        {onNewScenario && (
+          <button
+            type="button"
+            className="btn-secondary w-full py-2 text-[12px]"
+            disabled={loading}
+            onClick={onNewScenario}
+          >
+            New scenario
+          </button>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }

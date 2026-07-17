@@ -6,12 +6,18 @@
 import { runSimulation } from "./adapters/akash";
 import {
   getPositions,
+  getWorldModel,
   logSignal,
   mapEventToNodes,
   recordFill,
   writeThesis,
 } from "./adapters/nexla";
-import { gateExecuteTrade } from "./adapters/pomerium";
+import {
+  clearRiskAuditLog,
+  gateExecuteTrade,
+  gateReadTool,
+  MAX_STAKE_USD,
+} from "./adapters/pomerium";
 import {
   executeViaZero,
   getDiscoveredCapabilities,
@@ -23,7 +29,6 @@ import { loadOutcomes, matchScenario } from "./scenario";
 import {
   emptyFundState,
   getSession,
-  loadWorldModel,
   nowIso,
   resetPositionBook,
   saveSession,
@@ -57,6 +62,12 @@ function initialTelemetry(): Telemetry {
     akashProvider: "—",
     akashEndpoint: "—",
     capabilitiesDiscovered: [],
+    sources: {
+      zero: "—",
+      nexla: "—",
+      pomerium: "—",
+      akash: "—",
+    },
   };
 }
 
@@ -117,6 +128,7 @@ export async function runScreen(
   const mode = opts.replay ? "replay" : "live";
   resetPositionBook();
   resetZeroWallet(5);
+  clearRiskAuditLog();
 
   const ctx: Mutable = {
     state: createInitialState(mode),
@@ -140,8 +152,8 @@ export async function runScreen(
     );
     await sleep(280);
 
-    // Zero enrichment beat
-    const ingest = await ingestViaZero({ replay: true });
+    // Zero enrichment — sole odds/news path (live when ZERO_* set, else fixture)
+    const ingest = await ingestViaZero({ replay: Boolean(opts.replay) });
     const wallet = getZeroWallet();
     push(
       {
@@ -150,12 +162,14 @@ export async function runScreen(
           zeroSpendUsd: wallet.spend,
           zeroWalletUsd: wallet.balance,
           capabilitiesDiscovered: getDiscoveredCapabilities().map((c) => c.name),
+          sources: { ...ctx.state.telemetry.sources, zero: ingest.source },
         },
       },
       makeTape(
         "observe",
         "SCENARIO",
-        `Zero enrichment · ${ingest.capabilities.map((c) => c.name).join(", ")} · spend $${ingest.spendUsd.toFixed(2)}`
+        `Zero enrichment (${ingest.source}) · ${ingest.capabilities.map((c) => c.name).join(", ")} · spend $${ingest.spendUsd.toFixed(2)}`,
+        { actor: "Zero", source: ingest.source }
       )
     );
     await sleep(250);
@@ -167,15 +181,31 @@ export async function runScreen(
           preset_id: opts.preset_id,
         });
 
-    // Attach Zero-discovered odds flavor onto event if live scan existed
+    // Only merge Zero fixture headlines when geography matches (avoid Red Sea→Hormuz mashup)
+    const geoMatch =
+      ingest.source === "zero-live" ||
+      ingest.event.epicenter_node === matched.event.epicenter_node;
     matched.event = {
       ...matched.event,
       source: `${matched.event.source}+zero`,
-      news_headlines: [
-        ...matched.event.news_headlines,
-        ...ingest.event.news_headlines.slice(0, 1),
-      ].slice(0, 4),
+      news_headlines: geoMatch
+        ? [
+            ...matched.event.news_headlines,
+            ...ingest.event.news_headlines.slice(0, 1),
+          ].slice(0, 4)
+        : matched.event.news_headlines,
     };
+    if (!geoMatch && ingest.source === "zero-fixture") {
+      push(
+        {},
+        makeTape(
+          "system",
+          "SCENARIO",
+          `Zero fixture geography (${ingest.event.epicenter_node}) ≠ epicenter — skipped headline merge`,
+          { actor: "Zero", source: ingest.source }
+        )
+      );
+    }
 
     setStage("SCREEN");
     push(
@@ -188,7 +218,7 @@ export async function runScreen(
     );
     await sleep(300);
 
-    await logSignal({
+    const signal = await logSignal({
       market_id: matched.event.markets[0]?.id ?? "screen",
       side: "YES",
       ev: matched.implied_probability,
@@ -196,6 +226,27 @@ export async function runScreen(
       thesis: `SCREEN: ${matched.event.title}`,
     });
     ctx.nexlaCalls += 1;
+    // Pomerium allows read/research tools for trader-agent
+    const screenGate = gateReadTool("log_signal");
+    push(
+      {
+        telemetry: {
+          ...ctx.state.telemetry,
+          nexlaToolCalls: ctx.nexlaCalls,
+          sources: {
+            ...ctx.state.telemetry.sources,
+            nexla: signal.source,
+            pomerium: screenGate.source,
+          },
+        },
+      },
+      makeTape(
+        "act",
+        "SCREEN",
+        `Nexla log_signal (${signal.source}) · Pomerium ${screenGate.decision} (${screenGate.source})`,
+        { actor: "Nexla", source: signal.source, pomerium: screenGate.source }
+      )
+    );
 
     const outcomes = matched.affected_outcomes;
     push(
@@ -210,6 +261,10 @@ export async function runScreen(
           zeroSpendUsd: getZeroWallet().spend,
           zeroWalletUsd: getZeroWallet().balance,
           capabilitiesDiscovered: getDiscoveredCapabilities().map((c) => c.name),
+          sources: {
+            ...ctx.state.telemetry.sources,
+            pomerium: screenGate.source,
+          },
         },
         positions: (await getPositions()).data,
       },
@@ -289,12 +344,19 @@ export async function runSimulatePhase(
     );
     await sleep(300);
 
+    // Pomerium gates Nexla research tools before mapping
+    const mapGate = gateReadTool("map_event_to_nodes");
     const mapped = await mapEventToNodes({
       epicenter_node: matched.event.epicenter_node,
       implied_probability: matched.implied_probability,
       max_hops: 4,
     });
     ctx.nexlaCalls += 1;
+
+    // World model via Nexla adapter (live MCP or local Nexset)
+    const wmResult = await getWorldModel();
+    ctx.nexlaCalls += 1;
+    const wm = wmResult.data;
 
     // Filter edges by selected outcome commodities / lane types
     const { outcomes: taxonomy } = loadOutcomes();
@@ -304,7 +366,6 @@ export async function runSimulatePhase(
     );
     const wantedLanes = new Set(selectedDefs.flatMap((o) => o.lane_types));
 
-    const wm = loadWorldModel();
     const disruptedEdges = wm.edges
       .filter((e) => {
         const c = e.commodity ?? "";
@@ -323,19 +384,29 @@ export async function runSimulatePhase(
         affectedNodes: mapped.data.nodeIds,
         affectedEdges: mapped.data.edgeIds,
         disruptedEdges,
-        telemetry: { ...ctx.state.telemetry, nexlaToolCalls: ctx.nexlaCalls },
+        telemetry: {
+          ...ctx.state.telemetry,
+          nexlaToolCalls: ctx.nexlaCalls,
+          sources: {
+            ...ctx.state.telemetry.sources,
+            nexla: mapped.source,
+            pomerium: mapGate.source,
+          },
+        },
       },
       makeTape(
         "act",
         "MODEL",
-        `Nexla map → ${mapped.data.nodeIds.length} nodes · ${disruptedEdges.length} disrupted edges`
+        `Nexla map (${mapped.source}) · Pomerium ${mapGate.decision} · ${mapped.data.nodeIds.length} nodes · ${disruptedEdges.length} disrupted edges`,
+        { actor: "Nexla", source: mapped.source, pomerium: mapGate.source }
       )
     );
     await sleep(350);
 
     setStage("SIMULATE");
+    // Keep globe until timeline `tactical_cutaway` — avoid pre-playback map flash
     push(
-      { viewport: "tactical" },
+      { viewport: "globe" },
       makeTape(
         "plan",
         "SIMULATE",
@@ -373,12 +444,18 @@ export async function runSimulatePhase(
           akashProvider: lease.provider,
           akashEndpoint: lease.endpoint,
           nexlaToolCalls: ctx.nexlaCalls,
+          sources: {
+            ...ctx.state.telemetry.sources,
+            akash: lease.source,
+            nexla: wmResult.source,
+          },
         },
       },
       makeTape(
         "observe",
         "SIMULATE",
-        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"} · playback ${Math.round(timeline.duration_ms / 1000)}s`
+        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"} · playback ${Math.round(timeline.duration_ms / 1000)}s`,
+        { actor: "Akash", source: lease.source }
       )
     );
     await sleep(200);
@@ -492,8 +569,8 @@ export async function runExecutePhase(
     for (const prop of proposals) {
       setStage("RISK");
       if (first) {
-        // Demo beat: oversize deny then resize
-        const oversized = 5.0;
+        // Policy-driven deny: stake above Pomerium max (mirrors pomerium/config.yaml)
+        const oversized = Number((MAX_STAKE_USD + 3).toFixed(2));
         push(
           { attemptedSize: oversized, clearance: "TRADER", selectedMarket: {
             market_id: prop.market_id,
@@ -510,7 +587,7 @@ export async function runExecutePhase(
           makeTape(
             "act",
             "RISK",
-            `Sizing $${oversized.toFixed(2)} on ${prop.market_id} — Pomerium gate…`
+            `Sizing $${oversized.toFixed(2)} on ${prop.market_id} — Pomerium max $${MAX_STAKE_USD.toFixed(2)}…`
           )
         );
         await sleep(400);
@@ -530,12 +607,17 @@ export async function runExecutePhase(
               ...ctx.state.telemetry,
               pomeriumDeny: ctx.pomDeny,
               pomeriumAllow: ctx.pomAllow,
+              sources: {
+                ...ctx.state.telemetry.sources,
+                pomerium: denial.decision.source,
+              },
             },
           },
           makeTape(
             "observe",
             "RISK",
-            `ACCESS DENIED — POMERIUM: ${denial.decision.reason}`
+            `ACCESS DENIED — POMERIUM (${denial.decision.source}): ${denial.decision.reason}`,
+            { actor: "Pomerium", source: denial.decision.source }
           )
         );
         await sleep(450);
@@ -581,12 +663,17 @@ export async function runExecutePhase(
             ...ctx.state.telemetry,
             pomeriumAllow: ctx.pomAllow,
             pomeriumDeny: ctx.pomDeny,
+            sources: {
+              ...ctx.state.telemetry.sources,
+              pomerium: allow.decision.source,
+            },
           },
         },
         makeTape(
           "observe",
           "RISK",
-          `POMERIUM ALLOW · $${prop.size_usd.toFixed(2)} ${prop.market_id}`
+          `POMERIUM ALLOW (${allow.decision.source}) · $${prop.size_usd.toFixed(2)} ${prop.market_id}`,
+          { actor: "Pomerium", source: allow.decision.source }
         )
       );
       await sleep(250);
@@ -628,12 +715,18 @@ export async function runExecutePhase(
             pomeriumAllow: ctx.pomAllow,
             pomeriumDeny: ctx.pomDeny,
             capabilitiesDiscovered: getDiscoveredCapabilities().map((c) => c.name),
+            sources: {
+              ...ctx.state.telemetry.sources,
+              zero: fill.source,
+              pomerium: allow.decision.source,
+            },
           },
         },
         makeTape(
           "observe",
           "EXECUTE",
-          `FILL ${fill.tx} · $${fill.size_usd.toFixed(2)} @ ${fill.price.toFixed(2)}`
+          `FILL ${fill.tx} (${fill.source}) · $${fill.size_usd.toFixed(2)} @ ${fill.price.toFixed(2)}`,
+          { actor: "Zero", source: fill.source }
         )
       );
       await sleep(300);
@@ -675,20 +768,30 @@ export async function runPipeline(
   emit: EmitFn,
   opts: { replay?: boolean } = {}
 ): Promise<FundState> {
+  const replay = opts.replay ?? true;
   const screenState = await runScreen(emit, {
     preset_id: "hormuz-closure",
-    replay: opts.replay ?? true,
+    replay,
   });
   const scenario_id = screenState.scenario?.scenario_id;
-  if (!scenario_id) return screenState;
+  if (!scenario_id) {
+    emit({ type: "pipeline_done", payload: screenState });
+    return screenState;
+  }
 
   const outcomes =
     screenState.affectedOutcomes.map((o: AffectedOutcome) => o.id);
   const simState = await runSimulatePhase(emit, {
     scenario_id,
     outcomes,
-    replay: true,
+    replay,
   });
   const ids = simState.proposals.map((p) => p.id);
-  return runExecutePhase(emit, { scenario_id, proposal_ids: ids });
+  const finalState = await runExecutePhase(emit, {
+    scenario_id,
+    proposal_ids: ids,
+  });
+  // Single terminal event so clients don't close on intermediate phase `done`
+  emit({ type: "pipeline_done", payload: finalState });
+  return finalState;
 }

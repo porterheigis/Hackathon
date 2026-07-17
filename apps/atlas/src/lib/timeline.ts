@@ -407,6 +407,60 @@ export function sampleAssetPosition(
   };
 }
 
+/** Heading in degrees (0 = north) along the asset path at time t */
+export function sampleAssetHeading(
+  asset: TimelineAsset,
+  t: number
+): number {
+  const a = sampleAssetPosition(asset, t);
+  const b = sampleAssetPosition(asset, Math.min(1, t + 0.002));
+  if (!a || !b) return 0;
+  const dLat = b.lat - a.lat;
+  const dLng = b.lng - a.lng;
+  if (Math.abs(dLat) < 1e-9 && Math.abs(dLng) < 1e-9) return 0;
+  return (Math.atan2(dLng, dLat) * 180) / Math.PI;
+}
+
+/** 0→1 fade in over ~4% of timeline after spawn */
+export function sampleAssetOpacity(asset: TimelineAsset, t: number): number {
+  if (t < asset.spawn_t) return 0;
+  const fade = 0.04;
+  return Math.min(1, (t - asset.spawn_t) / fade);
+}
+
+/** Continuous camera spline for cinematic playback */
+export function sampleCamera(
+  t: number,
+  epicenter: { lat: number; lng: number }
+): { lat: number; lng: number; altitude: number } {
+  // Piecewise smooth: strike → cascade → adapt → impact
+  const ease = (x: number) => x * x * (3 - 2 * x);
+  let altitude: number;
+  let lngOffset: number;
+  if (t < 0.17) {
+    const u = ease(t / 0.17);
+    altitude = lerp(1.55, 1.35, u);
+    lngOffset = 0;
+  } else if (t < 0.44) {
+    const u = ease((t - 0.17) / 0.27);
+    altitude = lerp(1.35, 1.85, u);
+    lngOffset = lerp(0, 14, u);
+  } else if (t < 0.72) {
+    const u = ease((t - 0.44) / 0.28);
+    altitude = lerp(1.85, 2.25, u);
+    lngOffset = lerp(14, -16, u);
+  } else {
+    const u = ease((t - 0.72) / 0.28);
+    altitude = lerp(2.25, 2.65, u);
+    lngOffset = lerp(-16, 0, u);
+  }
+  return {
+    lat: epicenter.lat,
+    lng: epicenter.lng + lngOffset,
+    altitude,
+  };
+}
+
 export function phaseAt(timeline: SimTimeline, t: number): TimelinePhase {
   return (
     timeline.phases.find((p) => t >= p.start && t < p.end) ??

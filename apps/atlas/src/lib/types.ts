@@ -206,6 +206,13 @@ export interface DetectionRow {
   tone: "warn" | "crit" | "info";
 }
 
+export interface IntegrationSources {
+  zero: "zero-live" | "zero-fixture" | "—";
+  nexla: "nexla-live" | "nexla-local" | "—";
+  pomerium: "pomerium-live" | "pomerium-local" | "—";
+  akash: "akash-live" | "akash-local" | "—";
+}
+
 export interface Telemetry {
   zeroSpendUsd: number;
   zeroWalletUsd: number;
@@ -216,6 +223,8 @@ export interface Telemetry {
   akashProvider: string;
   akashEndpoint: string;
   capabilitiesDiscovered: string[];
+  /** Honest live vs local mode for each sponsor adapter */
+  sources: IntegrationSources;
 }
 
 export interface OutcomeVisual {
@@ -306,7 +315,14 @@ export interface FundState {
 }
 
 export interface OrchestratorEvent {
-  type: "tape" | "state" | "stage" | "proposals" | "done" | "error";
+  type:
+    | "tape"
+    | "state"
+    | "stage"
+    | "proposals"
+    | "done"
+    | "pipeline_done"
+    | "error";
   payload: unknown;
 }
 

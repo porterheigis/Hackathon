@@ -20,48 +20,30 @@ export function FundPanel({ state }: FundPanelProps) {
   const markPnl =
     state.selectedMarket && state.approvedSize
       ? (state.selectedMarket.edge ?? 0) * state.approvedSize * 0.35
-      : 0;
+      : fills.reduce((a, f) => a + (f.size_usd ?? 0) * 0.05, 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {/* Wallet */}
-      <section className="border-b border-atlas-hairline px-3 py-3">
-        <h2 className="font-mono text-[10px] tracking-[0.15em] text-atlas-muted uppercase">
-          Zero Wallet
-        </h2>
-        <p className="mt-1 font-mono text-2xl tabular text-atlas-bright">
+      <section className="border-b border-white/[0.08] px-3 py-3">
+        <p className="eyebrow">Zero wallet</p>
+        <p className="mt-1 font-mono text-2xl tabular text-white">
           {money(state.telemetry.zeroWalletUsd)}
         </p>
-        <p className="mt-1 font-mono text-[11px] tabular text-atlas-dim">
+        <p className="mt-1 font-mono text-[11px] tabular text-white/35">
           Spend {money(state.telemetry.zeroSpendUsd)}
         </p>
-        {state.telemetry.capabilitiesDiscovered.length > 0 && (
-          <div className="fade-in mt-2">
-            <p className="font-mono text-[10px] tracking-[0.12em] text-atlas-cyan uppercase">
-              Capability discovered
-            </p>
-            <ul className="mt-1 space-y-0.5">
-              {state.telemetry.capabilitiesDiscovered.map((c) => (
-                <li key={c} className="font-mono text-[11px] text-atlas-text">
-                  {c}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </section>
 
-      {/* EV table */}
-      <section className="border-b border-atlas-hairline px-3 py-3">
-        <h2 className="font-mono text-[10px] tracking-[0.15em] text-atlas-muted uppercase">
-          Simulation EV
-        </h2>
+      <section className="border-b border-white/[0.08] px-3 py-3">
+        <p className="eyebrow">Simulation EV</p>
         {!state.sim ? (
-          <p className="mt-2 font-mono text-[11px] text-atlas-dim">— awaiting sim</p>
+          <p className="mt-2 text-[12px] text-white/30">
+            Awaiting simulation
+          </p>
         ) : (
           <table className="mt-2 w-full font-mono text-[11px]">
             <thead>
-              <tr className="text-left text-atlas-dim">
+              <tr className="text-left text-white/30">
                 <th className="pb-1 font-medium">Market</th>
                 <th className="pb-1 text-right font-medium">Edge</th>
                 <th className="pb-1 text-right font-medium">Conf</th>
@@ -71,11 +53,7 @@ export function FundPanel({ state }: FundPanelProps) {
               {state.sim.markets.map((m) => (
                 <tr
                   key={m.market_id}
-                  className={`border-t border-atlas-hairline/50 ${
-                    state.selectedMarket?.market_id === m.market_id
-                      ? "text-atlas-cyan"
-                      : "text-atlas-text"
-                  }`}
+                  className="border-t border-white/[0.04] text-white/80"
                 >
                   <td className="max-w-[9rem] truncate py-1" title={m.question}>
                     {m.market_id.replace("mkt-", "")}
@@ -87,7 +65,7 @@ export function FundPanel({ state }: FundPanelProps) {
                   >
                     {(m.edge ?? 0).toFixed(3)}
                   </td>
-                  <td className="py-1 text-right tabular text-atlas-muted">
+                  <td className="py-1 text-right tabular text-white/35">
                     {m.confidence.toFixed(2)}
                   </td>
                 </tr>
@@ -97,29 +75,22 @@ export function FundPanel({ state }: FundPanelProps) {
         )}
       </section>
 
-      {/* Positions */}
-      <section className="border-b border-atlas-hairline px-3 py-3">
-        <h2 className="font-mono text-[10px] tracking-[0.15em] text-atlas-muted uppercase">
-          Position Book · Nexset
-        </h2>
+      <section className="border-b border-white/[0.08] px-3 py-3">
+        <p className="eyebrow">Position book</p>
         {fills.length === 0 && denials.length === 0 ? (
-          <p className="mt-2 font-mono text-[11px] text-atlas-dim">Empty</p>
+          <p className="mt-2 text-[12px] text-white/30">
+            No positions yet — run a simulation.
+          </p>
         ) : (
           <ul className="mt-2 space-y-2">
             {denials.map((d) => (
-              <li
-                key={d.id}
-                className="fade-in font-mono text-[11px] text-atlas-red"
-              >
-                DENIED {d.market_id} ${d.size_usd?.toFixed(2)}
+              <li key={d.id} className="font-mono text-[11px] text-atlas-red">
+                Denied {d.market_id} ${d.size_usd?.toFixed(2)}
               </li>
             ))}
             {fills.map((f) => (
-              <li
-                key={f.id}
-                className="fade-in font-mono text-[11px] text-atlas-green"
-              >
-                FILL {f.side} {f.market_id} ${f.size_usd?.toFixed(2)} @{" "}
+              <li key={f.id} className="font-mono text-[11px] text-atlas-green">
+                Fill {f.side} {f.market_id} ${f.size_usd?.toFixed(2)} @{" "}
                 {f.price?.toFixed(2)}
               </li>
             ))}
@@ -127,11 +98,8 @@ export function FundPanel({ state }: FundPanelProps) {
         )}
       </section>
 
-      {/* P&L */}
       <section className="px-3 py-3">
-        <h2 className="font-mono text-[10px] tracking-[0.15em] text-atlas-muted uppercase">
-          Mark P&amp;L
-        </h2>
+        <p className="eyebrow">Mark P&amp;L</p>
         <p
           className={`mt-1 font-mono text-xl tabular ${
             markPnl >= 0 ? "text-atlas-green" : "text-atlas-red"
@@ -140,18 +108,6 @@ export function FundPanel({ state }: FundPanelProps) {
           {markPnl >= 0 ? "+" : ""}
           {money(markPnl)}
         </p>
-        {state.approvedSize != null && (
-          <p className="mt-1 font-mono text-[11px] text-atlas-dim">
-            Stake {money(state.approvedSize)}
-            {state.attemptedSize != null &&
-              state.attemptedSize !== state.approvedSize && (
-                <span className="text-atlas-amber">
-                  {" "}
-                  (resized from {money(state.attemptedSize)})
-                </span>
-              )}
-          </p>
-        )}
       </section>
     </div>
   );

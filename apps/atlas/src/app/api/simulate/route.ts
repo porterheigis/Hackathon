@@ -1,4 +1,4 @@
-import { runPipeline } from "@/lib/orchestrator";
+import { runPipeline, runSimulatePhase } from "@/lib/orchestrator";
 import type { OrchestratorEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,12 @@ export async function GET(req: Request) {
   const replay =
     searchParams.get("replay") === "1" ||
     searchParams.get("replay") === "true";
+  const scenario_id = searchParams.get("scenario_id");
+  const outcomesParam = searchParams.get("outcomes") ?? "";
+  const outcomes = outcomesParam
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const encoder = new TextEncoder();
   let closed = false;
@@ -27,7 +33,16 @@ export async function GET(req: Request) {
       };
 
       try {
-        await runPipeline(send, { replay });
+        if (scenario_id) {
+          await runSimulatePhase(send, {
+            scenario_id,
+            outcomes,
+            replay,
+          });
+        } else {
+          // Legacy / demo: full auto pipeline
+          await runPipeline(send, { replay: replay || true });
+        }
       } catch (err) {
         send({
           type: "error",

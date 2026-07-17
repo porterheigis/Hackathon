@@ -1,0 +1,250 @@
+{
+  "presets": [
+    {
+      "id": "hormuz-closure",
+      "label": "Strait of Hormuz closes",
+      "text": "The Strait of Hormuz closes after a regional escalation; oil tankers cannot transit the Persian Gulf.",
+      "epicenter_node": "hormuz",
+      "disruption_type": "blockade",
+      "severity": 0.92,
+      "implied_probability": 0.68,
+      "default_outcomes": ["oil_price", "lng_gas", "air_travel", "insurance_rates"],
+      "markets": [
+        {
+          "id": "mkt-hormuz-oil",
+          "question": "Will Hormuz transit disruption last >30 days?",
+          "yes_price": 0.42,
+          "no_price": 0.58,
+          "volume_24h": 1200000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-brent-above-85",
+          "question": "Will Brent crude settle above $85/bbl this month?",
+          "yes_price": 0.55,
+          "no_price": 0.45,
+          "volume_24h": 890000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-air-gulf",
+          "question": "Will Gulf air corridor capacity drop >25% this month?",
+          "yes_price": 0.38,
+          "no_price": 0.62,
+          "volume_24h": 210000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-war-risk-prem",
+          "question": "Will Gulf war-risk insurance premiums double?",
+          "yes_price": 0.48,
+          "no_price": 0.52,
+          "volume_24h": 340000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "Tankers idle outside Hormuz as escorts fail to restore transit",
+        "Brent spikes on Gulf shipping halt fears",
+        "Carriers divert Gulf flights over escalating tensions"
+      ]
+    },
+    {
+      "id": "suez-blockade",
+      "label": "Suez / Red Sea blockade",
+      "text": "Bab el-Mandeb and the Suez approaches are blockaded; Asia–Europe container traffic is forced around the Cape.",
+      "epicenter_node": "bab-el-mandeb",
+      "disruption_type": "blockade",
+      "severity": 0.88,
+      "implied_probability": 0.72,
+      "default_outcomes": ["container_freight", "oil_price", "food_prices"],
+      "markets": [
+        {
+          "id": "mkt-red-sea-disruption",
+          "question": "Will Red Sea shipping disruption persist through Q3?",
+          "yes_price": 0.61,
+          "no_price": 0.39,
+          "volume_24h": 2400000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-freight-spike",
+          "question": "Will Asia–Europe container freight rise >20% MoM?",
+          "yes_price": 0.47,
+          "no_price": 0.53,
+          "volume_24h": 980000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-suez-closure",
+          "question": "Will Suez Canal transit volume drop >30% this quarter?",
+          "yes_price": 0.44,
+          "no_price": 0.56,
+          "volume_24h": 720000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "Maersk extends Red Sea diversion indefinitely",
+        "Asia–Europe spot rates jump on Cape routing",
+        "Suez daily transits collapse to multi-year lows"
+      ]
+    },
+    {
+      "id": "taiwan-blockade",
+      "label": "Taiwan Strait blockade",
+      "text": "The Taiwan Strait is blockaded; semiconductor and container flows from East Asia are disrupted.",
+      "epicenter_node": "taiwan-strait",
+      "disruption_type": "blockade",
+      "severity": 0.9,
+      "implied_probability": 0.55,
+      "default_outcomes": ["semiconductors", "container_freight", "air_travel"],
+      "markets": [
+        {
+          "id": "mkt-semi-disruption",
+          "question": "Will advanced chip lead times extend >8 weeks?",
+          "yes_price": 0.41,
+          "no_price": 0.59,
+          "volume_24h": 1500000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-taiwan-freight",
+          "question": "Will East Asia container rates rise >25% this month?",
+          "yes_price": 0.36,
+          "no_price": 0.64,
+          "volume_24h": 640000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-air-taiwan",
+          "question": "Will Taiwan air cargo capacity drop >40%?",
+          "yes_price": 0.33,
+          "no_price": 0.67,
+          "volume_24h": 280000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "Commercial shipping warned off Taiwan Strait",
+        "Fab logistics scramble as air and sea lanes tighten",
+        "Chip buyers race to pre-position inventory"
+      ]
+    },
+    {
+      "id": "panama-drought",
+      "label": "Panama Canal drought",
+      "text": "Severe drought cuts Panama Canal daily transits; LNG and container bookings slip months.",
+      "epicenter_node": "panama",
+      "disruption_type": "drought",
+      "severity": 0.75,
+      "implied_probability": 0.7,
+      "default_outcomes": ["container_freight", "lng_gas", "food_prices"],
+      "markets": [
+        {
+          "id": "mkt-freight-spike",
+          "question": "Will Asia–Europe container freight rise >20% MoM?",
+          "yes_price": 0.4,
+          "no_price": 0.6,
+          "volume_24h": 510000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-lng-europe",
+          "question": "Will TTF LNG futures rise >15% this month?",
+          "yes_price": 0.35,
+          "no_price": 0.65,
+          "volume_24h": 430000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "Panama Canal Authority slashes daily slots again",
+        "US LNG cargoes reroute around Cape Horn",
+        "Grain exporters face longer Americas transit times"
+      ]
+    },
+    {
+      "id": "russia-gas-cutoff",
+      "label": "Russian gas cutoff to EU",
+      "text": "Remaining Russian pipeline gas to the EU is cut off; TTF and power prices spike.",
+      "epicenter_node": "hub-ara",
+      "disruption_type": "cutoff",
+      "severity": 0.85,
+      "implied_probability": 0.6,
+      "default_outcomes": ["lng_gas", "power_prices", "food_prices"],
+      "markets": [
+        {
+          "id": "mkt-eu-gas",
+          "question": "Will EU TTF front-month exceed €50/MWh this month?",
+          "yes_price": 0.46,
+          "no_price": 0.54,
+          "volume_24h": 1100000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-eu-power",
+          "question": "Will German power baseload rise >20% MoM?",
+          "yes_price": 0.39,
+          "no_price": 0.61,
+          "volume_24h": 520000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-lng-europe",
+          "question": "Will TTF LNG futures rise >15% this month?",
+          "yes_price": 0.52,
+          "no_price": 0.48,
+          "volume_24h": 870000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "EU emergency gas measures activated after pipeline halt",
+        "LNG terminals run near capacity as Asia competes for cargoes",
+        "Fertilizer plants cut runs on feedstock costs"
+      ]
+    },
+    {
+      "id": "gulf-coast-hurricane",
+      "label": "Gulf Coast hurricane",
+      "text": "A major hurricane shuts US Gulf Coast refining and Houston shipping; refined products and air travel disrupted.",
+      "epicenter_node": "port-houston",
+      "disruption_type": "hurricane",
+      "severity": 0.8,
+      "implied_probability": 0.65,
+      "default_outcomes": ["oil_price", "insurance_rates", "air_travel"],
+      "markets": [
+        {
+          "id": "mkt-brent-above-85",
+          "question": "Will Brent crude settle above $85/bbl this month?",
+          "yes_price": 0.5,
+          "no_price": 0.5,
+          "volume_24h": 760000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-war-risk-prem",
+          "question": "Will Gulf war-risk insurance premiums double?",
+          "yes_price": 0.22,
+          "no_price": 0.78,
+          "volume_24h": 90000,
+          "zero_service": "prediction-market-odds"
+        },
+        {
+          "id": "mkt-air-gulf",
+          "question": "Will Gulf air corridor capacity drop >25% this month?",
+          "yes_price": 0.28,
+          "no_price": 0.72,
+          "volume_24h": 150000,
+          "zero_service": "prediction-market-odds"
+        }
+      ],
+      "news_headlines": [
+        "USGC refineries shut ahead of landfall",
+        "Houston Ship Channel closed to deep-draft traffic",
+        "Domestic jet fuel cracks surge on Gulf outages"
+      ]
+    }
+  ]
+}

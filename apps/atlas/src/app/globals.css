@@ -1,26 +1,34 @@
 @import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 @theme {
-  --color-atlas-bg: #0a0e14;
-  --color-atlas-hairline: #1c2430;
-  --color-atlas-cyan: #39d3f5;
-  --color-atlas-amber: #ffb454;
-  --color-atlas-red: #ff5c5c;
-  --color-atlas-green: #2fd682;
-  --color-atlas-muted: #6b7785;
-  --color-atlas-dim: #3d4a5c;
-  --color-atlas-text: #c8d0da;
-  --color-atlas-bright: #e8eef4;
-  --font-mono: var(--font-plex), "IBM Plex Mono", "Geist Mono", ui-monospace, monospace;
+  --color-atlas-bg: #0b0b0d;
+  --color-atlas-surface: rgba(255, 255, 255, 0.03);
+  --color-atlas-border: rgba(255, 255, 255, 0.08);
+  --color-atlas-hairline: rgba(255, 255, 255, 0.08);
+  --color-atlas-accent: #0a84ff;
+  --color-atlas-cyan: #0a84ff;
+  --color-atlas-amber: #ff9f0a;
+  --color-atlas-red: #ff453a;
+  --color-atlas-green: #30d158;
+  --color-atlas-muted: rgba(255, 255, 255, 0.3);
+  --color-atlas-dim: rgba(255, 255, 255, 0.55);
+  --color-atlas-text: rgba(255, 255, 255, 0.9);
+  --color-atlas-bright: #ffffff;
+  --font-mono: var(--font-plex), "IBM Plex Mono", ui-monospace, monospace;
   --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 html,
 body {
   height: 100%;
-  background: #0a0e14;
-  color: #c8d0da;
+  background: #0b0b0d;
+  color: rgba(255, 255, 255, 0.9);
   font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 .font-mono {
@@ -31,42 +39,154 @@ body {
   box-sizing: border-box;
 }
 
-/* Tabular numerals for ticking data */
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* Blink cursor on newest tape line */
-@keyframes blink {
-  0%,
-  50% {
-    opacity: 1;
+.panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-primary {
+  background: #0a84ff;
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: transform 150ms ease-out, opacity 150ms ease-out, background 150ms ease-out;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0070e0;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-weight: 500;
+  transition: transform 150ms ease-out, background 150ms ease-out;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.55);
+  transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.pill-active {
+  background: rgba(10, 132, 255, 0.15);
+  border-color: rgba(10, 132, 255, 0.4);
+  color: #0a84ff;
+}
+
+.input-hero {
+  height: 48px;
+  width: 100%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0 16px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.input-hero::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.input-hero:focus {
+  border-color: rgba(10, 132, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
+}
+
+.deny-pulse {
+  animation: denyPulse 1.2s ease-out;
+}
+
+@keyframes denyPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.45);
   }
-  51%,
   100% {
-    opacity: 0;
+    box-shadow: 0 0 0 12px rgba(255, 69, 58, 0);
   }
 }
 
-.tape-cursor::after {
-  content: "▋";
-  margin-left: 2px;
-  color: #39d3f5;
-  animation: blink 1s step-end infinite;
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
 }
 
-/* Data-change motion only */
-.fade-in {
-  animation: fadeIn 180ms ease-out;
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.ticker-chip {
+  background: rgba(11, 11, 13, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 9px !important;
+  opacity: 0.5;
+}
+
+.maplibregl-ctrl-logo {
+  opacity: 0.4;
 }

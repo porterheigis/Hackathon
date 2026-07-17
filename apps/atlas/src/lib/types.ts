@@ -2,14 +2,20 @@
 
 export type PipelineStage =
   | "IDLE"
-  | "INGEST"
+  | "SCENARIO"
+  | "SCREEN"
+  | "AWAITING_OUTCOMES"
   | "MODEL"
   | "SIMULATE"
+  | "PROPOSE"
+  | "AWAITING_APPROVAL"
   | "RISK"
   | "EXECUTE"
   | "SETTLE"
   | "DONE"
-  | "ERROR";
+  | "ERROR"
+  // legacy stages kept for replay compatibility
+  | "INGEST";
 
 export type TapeKind = "plan" | "act" | "observe" | "correct" | "system";
 
@@ -30,6 +36,7 @@ export interface WorldNode {
   lng: number;
   region?: string;
   commodities?: string[];
+  aliases?: string[];
 }
 
 export interface WorldEdge {
@@ -39,6 +46,8 @@ export interface WorldEdge {
   lane?: string;
   decay: number;
   commodity?: string;
+  lane_type?: "sea" | "air";
+  traffic?: number;
 }
 
 export interface WorldMarket {
@@ -83,7 +92,7 @@ export interface FixtureEvent {
 export interface PositionEntry {
   id: string;
   ts: string;
-  kind: "signal" | "order" | "fill" | "pnl" | "denial" | "thesis";
+  kind: "signal" | "order" | "fill" | "pnl" | "denial" | "thesis" | "proposal";
   market_id?: string;
   side?: string;
   size_usd?: number;
@@ -120,6 +129,24 @@ export interface SimResult {
   node_exposure: Record<string, number>;
   propagation_order: string[];
   markets: MarketEV[];
+  tickers?: PriceTicker[];
+  detections?: DetectionRow[];
+  vessel_count?: number;
+}
+
+export interface PriceTicker {
+  node_id: string;
+  label: string;
+  delta_pct: number;
+  lat: number;
+  lng: number;
+}
+
+export interface DetectionRow {
+  id: string;
+  label: string;
+  value: string;
+  tone: "warn" | "crit" | "info";
 }
 
 export interface Telemetry {
@@ -134,12 +161,81 @@ export interface Telemetry {
   capabilitiesDiscovered: string[];
 }
 
+export interface OutcomeVisual {
+  effect: string;
+  ticker: string;
+  arc_behavior: "freeze_red" | "thin_dim" | string;
+}
+
+export interface OutcomeDef {
+  id: string;
+  name: string;
+  direction_hint: "up" | "down" | "volatile";
+  commodities: string[];
+  lane_types: string[];
+  markets: string[];
+  visual: OutcomeVisual;
+  detection_labels: string[];
+}
+
+export interface AffectedOutcome {
+  id: string;
+  name: string;
+  direction: "up" | "down" | "volatile";
+  confidence: number;
+  reason: string;
+  visual: OutcomeVisual;
+  markets: string[];
+}
+
+export interface ScenarioPreset {
+  id: string;
+  label: string;
+  text: string;
+  epicenter_node: string;
+  disruption_type: string;
+  severity: number;
+  implied_probability: number;
+  default_outcomes: string[];
+  markets: FixtureMarket[];
+  news_headlines: string[];
+}
+
+export interface ScenarioMatch {
+  scenario_id: string;
+  preset_id?: string;
+  text: string;
+  epicenter_nodes: string[];
+  disruption_type: string;
+  severity: number;
+  implied_probability: number;
+  affected_outcomes: AffectedOutcome[];
+  event: FixtureEvent;
+}
+
+export interface TradeProposal {
+  id: string;
+  market_id: string;
+  question: string;
+  side: string;
+  ev: number;
+  confidence: number;
+  size_usd: number;
+  price: number;
+  rationale: string;
+}
+
 export interface FundState {
   stage: PipelineStage;
   clearance: "TRADER" | "DENIED";
   event: FixtureEvent | null;
+  scenario: ScenarioMatch | null;
+  affectedOutcomes: AffectedOutcome[];
+  selectedOutcomes: string[];
+  proposals: TradeProposal[];
   affectedNodes: string[];
   affectedEdges: string[];
+  disruptedEdges: string[];
   sim: SimResult | null;
   positions: PositionEntry[];
   selectedMarket: MarketEV | null;
@@ -149,9 +245,16 @@ export interface FundState {
   telemetry: Telemetry;
   tape: TapeEvent[];
   mode: "live" | "replay";
+  viewport: "globe" | "tactical";
 }
 
 export interface OrchestratorEvent {
-  type: "tape" | "state" | "stage" | "done" | "error";
+  type: "tape" | "state" | "stage" | "proposals" | "done" | "error";
   payload: unknown;
+}
+
+export interface SessionRecord {
+  scenario: ScenarioMatch;
+  selectedOutcomes: string[];
+  state: FundState;
 }

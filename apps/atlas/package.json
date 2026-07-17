@@ -11,6 +11,8 @@
     "test:adapters": "npx tsx scripts/test-adapters.ts"
   },
   "dependencies": {
+    "framer-motion": "^12.42.2",
+    "maplibre-gl": "^5.24.0",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

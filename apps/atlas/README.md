@@ -1,38 +1,43 @@
 > **Monorepo path:** this app lives at `apps/atlas/`. From repo root: `cd apps/atlas && npm install && npm run dev`.
+> **Branch:** interactive scenario UX lives on `porter`.
 
 # ATLAS CAPITAL — The First Agent-Run Hedge Fund
 
-Palantir-style command center: a 3D globe world model maps live events onto a supply-chain graph, runs Monte Carlo impact sims on **Akash**, risk-gates every trade through **Pomerium**, governs positions via **Nexla** Nexsets, and executes micro-stakes from its own **Zero** wallet.
-
-One button. Full loop. All four sponsors.
+Interactive command center: describe a world event (or pick a preset), screen which outcomes are affected, run a **conditioned** Monte Carlo on **Akash**, watch real satellite imagery (Blue Marble globe + Esri tactical close-up), then approve agent-proposed trades that execute through **Pomerium → Zero → Nexla**.
 
 ```
-INGEST → MODEL → SIMULATE → RISK → EXECUTE → SETTLE
- Zero     Nexla    Akash    Pomerium  Zero     Nexla
+SCENARIO → SCREEN → (pick outcomes) → MODEL → SIMULATE → PROPOSE → (approve) → RISK → EXECUTE → SETTLE
+  Zero      Nexla                         Nexla   Akash              Pomerium   Zero     Nexla
 ```
 
 ---
 
-## Quick start (demo / replay — no credentials)
+## Quick start
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000?replay=1](http://localhost:3000?replay=1) and press **RUN SIMULATION**.
+Open [http://localhost:3000](http://localhost:3000):
 
-Replay mode is guaranteed: fixture Red Sea event, embedded Monte Carlo, local Pomerium policy mirror, Zero capability discovery + wallet spend, Nexla position book — all offline.
+1. Type an event (e.g. *“The Strait of Hormuz closes”*) or click a preset
+2. Select outcomes (oil, air travel, …) → **Run simulation**
+3. Watch globe → tactical satellite AOI → worldwide propagation
+4. Select proposed trades → **Execute selected** (Pomerium deny/resize beat, then fills)
+
+Guaranteed demo: [http://localhost:3000?replay=1](http://localhost:3000?replay=1) auto-runs the full Hormuz pipeline.
 
 ---
 
 ## Demo script (3 minutes)
 
-1. **0:00** — Idle globe, `FUND DORMANT — AWAITING MANDATE`, wallet $5.00, empty book. Press **RUN SIMULATION**.
-2. **0:30** — Stage rail lights `INGEST` → `MODEL` → `SIMULATE`. Tape streams plan/act/observe. Epicenter ring at Bab el-Mandeb; arcs propagate amber→red. EV table fills from Akash worker.
-3. **1:30** — `RISK`: agent tries $5.00 → banner flips **ACCESS DENIED — POMERIUM: max_stake_exceeded**. Loop resizes to $1.50 → ALLOW.
-4. **2:00** — `EXECUTE` / `SETTLE`: Zero fill lands in Nexla position book; wallet ticks down; P&L marks. Closing line on tape: *"No human placed a trade…"*
-5. Press again for a second full cycle.
+1. **0:00** — Idle Blue Marble globe. Hero input: describe a world event + presets.
+2. **0:20** — Screen returns affected outcomes. Pick oil + air travel → Run simulation.
+3. **0:40** — Camera flies to epicenter; cross-fade to Esri satellite tactical view (geofence, tanker markers, detections).
+4. **1:10** — Pull back to globe: frozen red sea lanes, thinning air corridors, price tickers.
+5. **1:40** — Proposals appear. Approve 2 → Pomerium denies $5, resizes, Zero fills, Nexla settles.
+6. Try Taiwan preset next to prove input-uniqueness.
 
 ---
 

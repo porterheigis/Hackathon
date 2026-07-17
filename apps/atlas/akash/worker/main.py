@@ -1,6 +1,6 @@
 """
 ATLAS CAPITAL — Monte Carlo supply-chain disruption simulator.
-Deployed on Akash; also runnable locally for demo/replay.
+Supports outcome_filter + disruption severity for conditioned sims.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="ATLAS Monte Carlo Worker", version="1.0.0")
+app = FastAPI(title="ATLAS Monte Carlo Worker", version="1.1.0")
 
 N_SIMS = int(os.getenv("N_SIMS", "5000"))
 WORKER_NAME = os.getenv("WORKER_NAME", "atlas-monte-carlo")
@@ -29,6 +29,8 @@ class Edge(BaseModel):
     target: str = Field(alias="to")
     decay: float
     commodity: str | None = None
+    lane_type: str | None = "sea"
+    traffic: float | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -41,6 +43,12 @@ class Market(BaseModel):
     yes_price: float | None = None
 
 
+class Disruption(BaseModel):
+    nodes: list[str] = []
+    type: str = "disruption"
+    severity: float = 0.8
+
+
 class SimRequest(BaseModel):
     epicenter_node: str
     implied_probability: float
@@ -48,6 +56,8 @@ class SimRequest(BaseModel):
     markets: list[Market]
     n_sims: int | None = None
     seed: int | None = 42
+    outcome_filter: list[str] = []
+    disruption: Disruption | None = None
 
 
 class MarketEV(BaseModel):
@@ -74,6 +84,7 @@ class SimResponse(BaseModel):
     node_exposure: dict[str, float]
     propagation_order: list[str]
     markets: list[MarketEV]
+    vessel_count: int | None = None
 
 
 def build_adjacency(edges: list[Edge]) -> dict[str, list[tuple[str, float]]]:
@@ -90,7 +101,6 @@ def propagate_once(
     adj: dict[str, list[tuple[str, float]]],
     max_hops: int = 5,
 ) -> dict[str, float]:
-    """Single Monte Carlo path: Bernoulli hit at epicenter, decay along edges."""
     exposure: dict[str, float] = {}
     if rng.random() > p_hit:
         return exposure
@@ -107,7 +117,6 @@ def propagate_once(
         for neighbor, decay in adj.get(node, []):
             if neighbor in visited:
                 continue
-            # Stochastic transmission
             transmit_p = decay * strength
             if rng.random() < min(1.0, transmit_p + 0.15):
                 frontier.append((neighbor, strength * decay, hops + 1))
@@ -130,17 +139,20 @@ def simulate(req: SimRequest) -> SimResponse:
     t0 = time.perf_counter()
     n = req.n_sims or N_SIMS
     rng = np.random.default_rng(req.seed)
-    adj = build_adjacency(req.edges)
+    severity = req.disruption.severity if req.disruption else 0.8
 
-    # Collect exposures across sims
+    adj_raw = build_adjacency(req.edges)
+    adj = {
+        k: [(n, min(0.99, d * (0.7 + 0.3 * severity))) for n, d in v]
+        for k, v in adj_raw.items()
+    }
+    p_hit = min(0.95, req.implied_probability * (0.85 + 0.2 * severity))
+
     node_sums: dict[str, float] = {}
-    hop_counts: dict[str, int] = {}
-
     for _ in range(n):
-        exp = propagate_once(rng, req.epicenter_node, req.implied_probability, adj)
+        exp = propagate_once(rng, req.epicenter_node, p_hit, adj)
         for node, strength in exp.items():
             node_sums[node] = node_sums.get(node, 0.0) + strength
-            hop_counts[node] = hop_counts.get(node, 0) + 1
 
     node_exposure = {k: v / n for k, v in node_sums.items()}
     propagation_order = sorted(
@@ -152,20 +164,19 @@ def simulate(req: SimRequest) -> SimResponse:
     for m in req.markets:
         impacts = []
         for _ in range(min(n, 2000)):
-            exp = propagate_once(rng, req.epicenter_node, req.implied_probability, adj)
-            impact = float(np.mean([exp.get(nid, 0.0) for nid in m.nodes]) if m.nodes else 0.0)
+            exp = propagate_once(rng, req.epicenter_node, p_hit, adj)
+            impact = float(
+                np.mean([exp.get(nid, 0.0) for nid in m.nodes]) if m.nodes else 0.0
+            )
             impacts.append(impact)
 
         arr = np.array(impacts)
         mean_impact = float(arr.mean())
         p5 = float(np.percentile(arr, 5))
         p95 = float(np.percentile(arr, 95))
-        # Map disruption impact → fair YES probability tilt
-        fair = min(0.95, max(0.05, req.implied_probability * (0.7 + 0.6 * mean_impact)))
+        fair = min(0.95, max(0.05, p_hit * (0.7 + 0.6 * mean_impact) * severity))
         market_price = m.yes_price if m.yes_price is not None else 0.5
         edge = fair - market_price
-        # EV per $1 stake on YES
-        ev = edge
         confidence = float(min(0.95, 0.4 + abs(edge) * 2 + mean_impact * 0.3))
 
         market_results.append(
@@ -176,7 +187,7 @@ def simulate(req: SimRequest) -> SimResponse:
                 mean_impact=round(mean_impact, 4),
                 p5=round(p5, 4),
                 p95=round(p95, 4),
-                expected_value=round(ev, 4),
+                expected_value=round(edge, 4),
                 confidence=round(confidence, 4),
                 market_price=market_price,
                 edge=round(edge, 4),
@@ -197,8 +208,8 @@ def simulate(req: SimRequest) -> SimResponse:
         node_exposure={k: round(v, 4) for k, v in node_exposure.items()},
         propagation_order=propagation_order,
         markets=market_results,
+        vessel_count=int(8 + severity * 18),
     )
 
 
-# Silence unused import warning for math (kept for future scoring)
 _ = math

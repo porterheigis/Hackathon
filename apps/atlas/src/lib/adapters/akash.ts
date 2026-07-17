@@ -1,17 +1,29 @@
 /**
- * Akash Monte Carlo adapter.
- * Calls AKASH_SIM_URL when set; otherwise runs embedded TS Monte Carlo
- * (mirrors akash/worker/main.py) and still emits lease telemetry.
+ * Akash Monte Carlo adapter — conditioned on outcome_filter + disruption.
  */
 
+import { loadOutcomes } from "../scenario";
 import { loadWorldModel, uid } from "../store";
-import type { FixtureEvent, MarketEV, SimResult, WorldEdge } from "../types";
+import type {
+  DetectionRow,
+  FixtureEvent,
+  MarketEV,
+  PriceTicker,
+  SimResult,
+  WorldEdge,
+  WorldModel,
+} from "../types";
 
 export interface AkashLeaseInfo {
   lease_id: string;
   provider: string;
   endpoint: string;
   source: "akash-live" | "akash-local";
+}
+
+export interface SimOptions {
+  outcome_filter?: string[];
+  disruption?: { nodes: string[]; type: string; severity: number };
 }
 
 function leaseInfo(): AkashLeaseInfo {
@@ -32,11 +44,31 @@ function leaseInfo(): AkashLeaseInfo {
   };
 }
 
-function buildAdj(edges: WorldEdge[]): Map<string, { to: string; decay: number }[]> {
+function filterEdges(
+  edges: WorldEdge[],
+  outcomeFilter: string[] | undefined
+): WorldEdge[] {
+  if (!outcomeFilter?.length) return edges;
+  const { outcomes } = loadOutcomes();
+  const defs = outcomes.filter((o) => outcomeFilter.includes(o.id));
+  const commodities = new Set(defs.flatMap((o) => o.commodities));
+  const lanes = new Set(defs.flatMap((o) => o.lane_types));
+  return edges.filter((e) => {
+    const c = e.commodity ?? "";
+    const lt = e.lane_type ?? "sea";
+    return commodities.has(c) || lanes.has(lt);
+  });
+}
+
+function buildAdj(
+  edges: WorldEdge[],
+  severity: number
+): Map<string, { to: string; decay: number }[]> {
   const adj = new Map<string, { to: string; decay: number }[]>();
   for (const e of edges) {
     const list = adj.get(e.from) ?? [];
-    list.push({ to: e.to, decay: e.decay });
+    // severity scales transmission probability
+    list.push({ to: e.to, decay: Math.min(0.99, e.decay * (0.7 + 0.3 * severity)) });
     adj.set(e.from, list);
   }
   return adj;
@@ -86,23 +118,94 @@ function propagateOnce(
   return exposure;
 }
 
+function buildTickers(
+  wm: WorldModel,
+  exposure: Record<string, number>,
+  outcomeFilter: string[] | undefined,
+  severity: number
+): PriceTicker[] {
+  const { outcomes } = loadOutcomes();
+  const defs = outcomes.filter(
+    (o) => !outcomeFilter?.length || outcomeFilter.includes(o.id)
+  );
+  const tickers: PriceTicker[] = [];
+  for (const o of defs) {
+    const node =
+      wm.nodes.find((n) =>
+        n.commodities?.some((c) => o.commodities.includes(c))
+      ) ?? wm.nodes.find((n) => n.type === "commodity");
+    if (!node) continue;
+    const exp = exposure[node.id] ?? severity * 0.5;
+    const sign = o.direction_hint === "down" ? -1 : 1;
+    const delta = Math.round(sign * (8 + exp * 40 + severity * 15) * 10) / 10;
+    tickers.push({
+      node_id: node.id,
+      label: o.visual.ticker,
+      delta_pct: delta,
+      lat: node.lat,
+      lng: node.lng,
+    });
+  }
+  return tickers.slice(0, 5);
+}
+
+function buildDetections(
+  outcomeFilter: string[] | undefined,
+  severity: number,
+  vesselCount: number
+): DetectionRow[] {
+  const { outcomes } = loadOutcomes();
+  const defs = outcomes.filter(
+    (o) => !outcomeFilter?.length || outcomeFilter.includes(o.id)
+  );
+  const rows: DetectionRow[] = [
+    {
+      id: "vessels",
+      label: "TANKERS HOLDING",
+      value: String(vesselCount),
+      tone: "crit",
+    },
+    {
+      id: "transits",
+      label: "TRANSITS/HR",
+      value: `−${Math.round(60 + severity * 30)}%`,
+      tone: "warn",
+    },
+  ];
+  for (const o of defs.slice(0, 3)) {
+    const label = o.detection_labels[0] ?? o.name.toUpperCase();
+    rows.push({
+      id: o.id,
+      label,
+      value:
+        o.direction_hint === "down"
+          ? `−${Math.round(15 + severity * 25)}%`
+          : `+${Math.round(10 + severity * 30)}%`,
+      tone: o.direction_hint === "down" ? "warn" : "crit",
+    });
+  }
+  return rows;
+}
+
 function runEmbeddedSim(
   event: FixtureEvent,
+  opts: SimOptions = {},
   nSims = 2000
 ): SimResult {
   const t0 = Date.now();
   const wm = loadWorldModel();
-  const adj = buildAdj(wm.edges);
+  const severity = opts.disruption?.severity ?? 0.8;
+  const edges = filterEdges(wm.edges, opts.outcome_filter);
+  const adj = buildAdj(edges, severity);
   const rand = mulberry32(42);
+  const pHit = Math.min(
+    0.95,
+    event.implied_probability * (0.85 + 0.2 * severity)
+  );
   const nodeSums: Record<string, number> = {};
 
   for (let i = 0; i < nSims; i++) {
-    const exp = propagateOnce(
-      rand,
-      event.epicenter_node,
-      event.implied_probability,
-      adj
-    );
+    const exp = propagateOnce(rand, event.epicenter_node, pHit, adj);
     for (const [k, v] of Object.entries(exp)) {
       nodeSums[k] = (nodeSums[k] ?? 0) + v;
     }
@@ -118,21 +221,29 @@ function runEmbeddedSim(
   );
 
   const lease = leaseInfo();
-  const markets: MarketEV[] = event.markets.map((m) => {
+  const marketSource = event.markets.length
+    ? event.markets
+    : wm.markets.map((m) => ({
+        id: m.id,
+        question: m.question,
+        yes_price: 0.45,
+        no_price: 0.55,
+        volume_24h: 100000,
+        zero_service: "prediction-market-odds",
+      }));
+
+  const markets: MarketEV[] = marketSource.map((m) => {
     const impacts: number[] = [];
     const mRand = mulberry32(hashStr(m.id));
     const wmMarket = wm.markets.find((x) => x.id === m.id);
-    const nodes = wmMarket?.nodes ?? [];
+    const nodes = wmMarket?.nodes ?? [event.epicenter_node];
 
     for (let i = 0; i < Math.min(nSims, 800); i++) {
-      const exp = propagateOnce(
-        mRand,
-        event.epicenter_node,
-        event.implied_probability,
-        adj
-      );
+      const exp = propagateOnce(mRand, event.epicenter_node, pHit, adj);
       const vals = nodes.map((n) => exp[n] ?? 0);
-      impacts.push(vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0);
+      impacts.push(
+        vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+      );
     }
 
     const mean =
@@ -142,7 +253,7 @@ function runEmbeddedSim(
     const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
     const fair = Math.min(
       0.95,
-      Math.max(0.05, event.implied_probability * (0.7 + 0.6 * mean))
+      Math.max(0.05, pHit * (0.7 + 0.6 * mean) * severity)
     );
     const edge = fair - m.yes_price;
     const confidence = Math.min(0.95, 0.4 + Math.abs(edge) * 2 + mean * 0.3);
@@ -161,7 +272,22 @@ function runEmbeddedSim(
     };
   });
 
-  markets.sort((a, b) => Math.abs(b.expected_value) - Math.abs(a.expected_value));
+  markets.sort(
+    (a, b) => Math.abs(b.expected_value) - Math.abs(a.expected_value)
+  );
+
+  const vessel_count = Math.round(8 + severity * 18);
+  const tickers = buildTickers(
+    wm,
+    node_exposure,
+    opts.outcome_filter,
+    severity
+  );
+  const detections = buildDetections(
+    opts.outcome_filter,
+    severity,
+    vessel_count
+  );
 
   return {
     run_id: `sim-${uid("run").slice(-10)}`,
@@ -174,6 +300,9 @@ function runEmbeddedSim(
     node_exposure,
     propagation_order,
     markets,
+    tickers,
+    detections,
+    vessel_count,
   };
 }
 
@@ -184,7 +313,8 @@ function hashStr(s: string): number {
 }
 
 export async function runSimulation(
-  event: FixtureEvent
+  event: FixtureEvent,
+  opts: SimOptions = {}
 ): Promise<{ result: SimResult; lease: AkashLeaseInfo }> {
   const lease = leaseInfo();
   const url = process.env.AKASH_SIM_URL;
@@ -192,13 +322,14 @@ export async function runSimulation(
   if (url) {
     try {
       const wm = loadWorldModel();
+      const edges = filterEdges(wm.edges, opts.outcome_filter);
       const res = await fetch(`${url.replace(/\/$/, "")}/simulate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           epicenter_node: event.epicenter_node,
           implied_probability: event.implied_probability,
-          edges: wm.edges,
+          edges,
           markets: event.markets.map((m) => ({
             id: m.id,
             question: m.question,
@@ -206,6 +337,8 @@ export async function runSimulation(
             side: "YES",
             yes_price: m.yes_price,
           })),
+          outcome_filter: opts.outcome_filter ?? [],
+          disruption: opts.disruption,
           n_sims: 3000,
           seed: 42,
         }),
@@ -213,16 +346,20 @@ export async function runSimulation(
       if (res.ok) {
         const result = (await res.json()) as SimResult;
         return {
-          result: { ...result, lease_id: lease.lease_id, provider: lease.provider },
+          result: {
+            ...result,
+            lease_id: lease.lease_id,
+            provider: lease.provider,
+          },
           lease,
         };
       }
     } catch {
-      // fall through to embedded
+      // fall through
     }
   }
 
-  return { result: runEmbeddedSim(event), lease };
+  return { result: runEmbeddedSim(event, opts), lease };
 }
 
 export function getAkashLeaseInfo(): AkashLeaseInfo {

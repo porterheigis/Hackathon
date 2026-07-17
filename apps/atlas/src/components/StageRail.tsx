@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import type { PipelineStage } from "@/lib/types";
 
 interface StageRailProps {
@@ -9,29 +10,36 @@ interface StageRailProps {
 }
 
 export function StageRail({ stages, activeIndex, current }: StageRailProps) {
+  const progress =
+    current === "DONE"
+      ? 1
+      : activeIndex < 0
+        ? 0
+        : (activeIndex + 0.5) / stages.length;
+
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-atlas-hairline px-4 font-mono text-[10px] tracking-[0.15em] uppercase">
+    <div className="relative flex h-9 shrink-0 items-center gap-0 border-b border-white/[0.08] px-4 text-[11px]">
+      <motion.div
+        className="absolute bottom-0 left-0 h-[2px] bg-atlas-accent"
+        animate={{ width: `${progress * 100}%` }}
+        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+      />
       {stages.map((stage, i) => {
         const done = activeIndex > i || current === "DONE";
         const active = activeIndex === i && current !== "DONE";
         return (
-          <div key={stage} className="flex items-center gap-1">
-            {i > 0 && (
-              <span className="mx-1 text-atlas-dim" aria-hidden>
-                →
-              </span>
-            )}
+          <div key={stage} className="flex items-center">
+            {i > 0 && <span className="mx-2 text-white/15">/</span>}
             <span
-              className={`transition-colors duration-150 ${
+              className={`transition-colors duration-200 ${
                 active
-                  ? "text-atlas-cyan"
+                  ? "font-medium text-atlas-accent"
                   : done
-                    ? "text-atlas-text"
-                    : "text-atlas-dim"
+                    ? "text-white/70"
+                    : "text-white/25"
               }`}
             >
-              {active && <span className="mr-1 text-atlas-cyan">●</span>}
-              {stage}
+              {stage.replace(/_/g, " ").toLowerCase()}
             </span>
           </div>
         );

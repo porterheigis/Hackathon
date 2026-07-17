@@ -1,0 +1,84 @@
+{
+  "outcomes": [
+    {
+      "id": "oil_price",
+      "name": "Oil prices",
+      "direction_hint": "up",
+      "commodities": ["crude"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-brent-above-85", "mkt-hormuz-oil"],
+      "visual": { "effect": "price_up", "ticker": "BRENT", "arc_behavior": "freeze_red" },
+      "detection_labels": ["TANKERS HOLDING", "CRUDE TRANSITS/HR"]
+    },
+    {
+      "id": "lng_gas",
+      "name": "LNG / gas prices",
+      "direction_hint": "up",
+      "commodities": ["lng"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-lng-europe", "mkt-eu-gas"],
+      "visual": { "effect": "price_up", "ticker": "TTF", "arc_behavior": "freeze_red" },
+      "detection_labels": ["LNG CARRIERS DELAYED", "TTF SPOT"]
+    },
+    {
+      "id": "container_freight",
+      "name": "Container freight",
+      "direction_hint": "up",
+      "commodities": ["container"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-freight-spike", "mkt-suez-closure", "mkt-taiwan-freight"],
+      "visual": { "effect": "price_up", "ticker": "FREIGHT", "arc_behavior": "freeze_red" },
+      "detection_labels": ["BOXSHIPS QUEUED", "TRANSITS/HR"]
+    },
+    {
+      "id": "air_travel",
+      "name": "Air travel / corridors",
+      "direction_hint": "down",
+      "commodities": ["air"],
+      "lane_types": ["air"],
+      "markets": ["mkt-air-gulf", "mkt-air-taiwan"],
+      "visual": { "effect": "traffic_down", "ticker": "AIR", "arc_behavior": "thin_dim" },
+      "detection_labels": ["FLIGHTS REROUTED", "CORRIDOR CAPACITY"]
+    },
+    {
+      "id": "food_prices",
+      "name": "Food / grain prices",
+      "direction_hint": "up",
+      "commodities": ["grain"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-grain-spike"],
+      "visual": { "effect": "price_up", "ticker": "WHEAT", "arc_behavior": "freeze_red" },
+      "detection_labels": ["GRAIN SHIPS HELD", "WHEAT FUTURES"]
+    },
+    {
+      "id": "semiconductors",
+      "name": "Semiconductors",
+      "direction_hint": "up",
+      "commodities": ["semiconductors"],
+      "lane_types": ["sea", "air"],
+      "markets": ["mkt-semi-disruption"],
+      "visual": { "effect": "price_up", "ticker": "SEMI", "arc_behavior": "freeze_red" },
+      "detection_labels": ["FAB LOGISTICS DELAY", "CHIP TRANSIT RISK"]
+    },
+    {
+      "id": "insurance_rates",
+      "name": "Marine insurance rates",
+      "direction_hint": "up",
+      "commodities": ["crude", "container", "lng"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-war-risk-prem"],
+      "visual": { "effect": "price_up", "ticker": "WAR RISK", "arc_behavior": "freeze_red" },
+      "detection_labels": ["WAR-RISK PREMIUM", "COVER WITHDRAWN"]
+    },
+    {
+      "id": "power_prices",
+      "name": "Power prices",
+      "direction_hint": "up",
+      "commodities": ["lng", "power"],
+      "lane_types": ["sea"],
+      "markets": ["mkt-eu-power"],
+      "visual": { "effect": "price_up", "ticker": "POWER", "arc_behavior": "freeze_red" },
+      "detection_labels": ["GRID STRESS", "PEAK POWER"]
+    }
+  ]
+}

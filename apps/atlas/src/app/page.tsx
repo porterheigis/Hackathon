@@ -124,8 +124,13 @@ function CommandCenterInner() {
   useEffect(() => {
     fetch("/api/world-model")
       .then((r) => r.json())
-      .then((data: WorldModel) => {
-        setWorldModel(data);
+      .then((data: WorldModel & { error?: string; _meta?: unknown }) => {
+        if (data.error || !Array.isArray(data.nodes)) {
+          setWorldModelError(true);
+          return;
+        }
+        const { _meta: _ignored, ...model } = data;
+        setWorldModel(model as WorldModel);
         setWorldModelError(false);
       })
       .catch(() => setWorldModelError(true));

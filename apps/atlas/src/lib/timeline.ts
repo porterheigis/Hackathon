@@ -428,12 +428,31 @@ export function sampleAssetOpacity(asset: TimelineAsset, t: number): number {
   return Math.min(1, (t - asset.spawn_t) / fade);
 }
 
-/** Continuous camera spline for cinematic playback */
+/** Tactical cutaway window (normalized t) from timeline events */
+export function cutWindow(
+  timeline: SimTimeline
+): { start: number; end: number } | null {
+  const cutStart = timeline.events.find((e) => e.kind === "tactical_cutaway");
+  const cutEnd = timeline.events.find((e) => e.kind === "tactical_end");
+  if (!cutStart || !cutEnd) return null;
+  const duration =
+    typeof cutStart.payload?.duration === "number"
+      ? (cutStart.payload.duration as number)
+      : cutEnd.t - cutStart.t;
+  return { start: cutStart.t, end: cutStart.t + duration };
+}
+
+/**
+ * Continuous camera spline for cinematic playback.
+ * When a cut window is provided, the camera dives toward the surface just
+ * before the tactical cutaway and climbs back out just after — so the
+ * globe→map crossfade reads as one continuous zoom.
+ */
 export function sampleCamera(
   t: number,
-  epicenter: { lat: number; lng: number }
+  epicenter: { lat: number; lng: number },
+  cut?: { start: number; end: number } | null
 ): { lat: number; lng: number; altitude: number } {
-  // Piecewise smooth: strike → cascade → adapt → impact
   const ease = (x: number) => x * x * (3 - 2 * x);
   let altitude: number;
   let lngOffset: number;
@@ -454,6 +473,24 @@ export function sampleCamera(
     altitude = lerp(2.25, 2.65, u);
     lngOffset = lerp(-16, 0, u);
   }
+
+  if (cut) {
+    const DIVE = 0.05; // t-window before cut: zoom down to the deck
+    const CLIMB = 0.06; // t-window after cut: pull back out
+    if (t >= cut.start - DIVE && t < cut.start) {
+      const u = ease((t - (cut.start - DIVE)) / DIVE);
+      altitude = lerp(altitude, 0.35, u);
+      lngOffset = lerp(lngOffset, 0, u);
+    } else if (t >= cut.start && t < cut.end) {
+      altitude = 0.35;
+      lngOffset = 0;
+    } else if (t >= cut.end && t < cut.end + CLIMB) {
+      const u = ease((t - cut.end) / CLIMB);
+      altitude = lerp(0.42, altitude, u);
+      lngOffset = lerp(0, lngOffset, u);
+    }
+  }
+
   return {
     lat: epicenter.lat,
     lng: epicenter.lng + lngOffset,

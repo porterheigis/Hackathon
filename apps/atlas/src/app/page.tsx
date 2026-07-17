@@ -26,6 +26,7 @@ import {
 import { emptyFundState } from "@/lib/store-client";
 import { usePlayback } from "@/lib/usePlayback";
 import { StageRail } from "@/components/StageRail";
+import { SponsorRail } from "@/components/SponsorRail";
 import { SimTheaterHUD } from "@/components/SimTheaterHUD";
 import { EventCard } from "@/components/EventCard";
 import { PnlCard } from "@/components/PnlCard";
@@ -484,6 +485,7 @@ function CommandCenterInner() {
             playbackT={isPlaying ? playback.t : null}
             timeline={timeline}
             playing={isPlaying}
+            getT={playback.getT}
           />
           <TacticalView
             worldModel={worldModel}
@@ -532,6 +534,15 @@ function CommandCenterInner() {
             </button>
           </div>
         </header>
+
+        <div className="cockpit-sponsor-rail opening-chrome">
+          <SponsorRail
+            tape={state.tape}
+            sources={state.telemetry.sources}
+            currentStage={isPlaying ? "SIMULATE" : state.stage}
+            running={running || isPlaying}
+          />
+        </div>
 
         {error && (
           <div className="cockpit-alert opening-chrome" role="alert">

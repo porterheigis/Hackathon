@@ -749,3 +749,32 @@ input:focus-visible {
     animation: none !important;
   }
 }
+
+.cockpit-sponsor-rail {
+  position: absolute;
+  top: var(--header-height);
+  right: 0;
+  left: 0;
+  z-index: 24;
+}
+
+.cockpit-sponsor-rail > div {
+  background: rgba(4, 10, 15, 0.86);
+  backdrop-filter: blur(14px);
+}
+
+.sponsor-pulse {
+  animation: sponsorPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes sponsorPulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(57, 211, 245, 0.45);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px rgba(57, 211, 245, 0);
+  }
+}

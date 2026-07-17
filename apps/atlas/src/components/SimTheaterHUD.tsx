@@ -57,7 +57,10 @@ export function SimTheaterHUD({
         <div className="sim-progress">
           <div
             className="sim-progress-fill"
-            style={{ width: `${Math.min(100, progress * 100)}%` }}
+            style={{
+              width: `${Math.min(100, progress * 100)}%`,
+              transition: "width 80ms linear",
+            }}
           />
         </div>
 

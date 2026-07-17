@@ -2,13 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
-import type { Object3D } from "three";
-import { sampleAssetPosition } from "@/lib/timeline";
+import {
+  disposeAssetMesh,
+  makeAssetIcon,
+  makeLayerGroup,
+  poseAssetMesh,
+} from "@/lib/globe-glyphs";
+import {
+  cutWindow,
+  sampleAssetOpacity,
+  sampleAssetPosition,
+  sampleCamera,
+} from "@/lib/timeline";
 import type {
   PipelineStage,
   PriceTicker,
   SimTimeline,
-  TimelineAsset,
   WorldModel,
 } from "@/lib/types";
 
@@ -27,29 +36,35 @@ interface GlobeViewProps {
   playbackT?: number | null;
   timeline?: SimTimeline | null;
   playing?: boolean;
+  /** Live 60fps playback t for rAF consumers (camera + props) */
+  getT?: () => number;
 }
 
 interface ArcDatum {
+  id: string;
   startLat: number;
   startLng: number;
   endLat: number;
   endLng: number;
   color: string[];
   stroke: number;
-  id: string;
   dashLength: number;
   dashGap: number;
   dashTime: number;
   altitude: number;
+  dashInitialGap: number;
+  /** cache of last applied style, to detect changes cheaply */
+  styleKey: string;
 }
 
 interface PointDatum {
+  id: string;
   lat: number;
   lng: number;
   size: number;
   color: string;
   label: string;
-  id: string;
+  styleKey: string;
 }
 
 interface RingDatum {
@@ -58,68 +73,37 @@ interface RingDatum {
   maxR: number;
   propagationSpeed: number;
   repeatPeriod: number;
+  color: string;
 }
 
 interface HtmlDatum {
-  kind: "ticker" | "node";
-  lat: number;
-  lng: number;
-  label: string;
-  delta?: number;
-}
-
-interface ObjectDatum {
   id: string;
   lat: number;
   lng: number;
-  alt: number;
-  kind: TimelineAsset["kind"];
   label: string;
+  delta: number;
 }
 
-const BLUE_MARBLE =
-  "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
-const TOPOLOGY =
-  "//unpkg.com/three-globe/example/img/earth-topology.png";
+type AssetMesh = ReturnType<typeof makeAssetIcon>;
 
-function makeGlyph(kind: TimelineAsset["kind"]): Object3D {
-  // Lazy-require three so Next build doesn't stall on the three graph
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const THREE = require("three") as typeof import("three");
-  const group = new THREE.Group();
-  const cyan = new THREE.MeshLambertMaterial({ color: "#39e7f2", emissive: "#0a5866" });
-  const amber = new THREE.MeshLambertMaterial({ color: "#ff8a32", emissive: "#5a2108" });
-  const red = new THREE.MeshLambertMaterial({ color: "#ff5a4f", emissive: "#50100c" });
-  const steel = new THREE.MeshLambertMaterial({ color: "#c9e8ef", emissive: "#17313b" });
+const BLUE_MARBLE = "/earth-night.jpg";
+const TOPOLOGY = "/earth-topology.png";
 
-  if (kind === "plane") {
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.18, 1.25, 5), cyan);
-    body.rotation.x = Math.PI / 2;
-    const wings = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.07, 0.24), cyan);
-    wings.position.z = 0.05;
-    group.add(body, wings);
-  } else if (kind === "military") {
-    group.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.43, 0), red));
-    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.035, 8, 28), red);
-    group.add(halo);
-  } else {
-    const material = kind === "tanker" ? amber : steel;
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 1.25), material);
-    hull.position.y = -0.02;
-    const bow = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.5, 4), material);
-    bow.rotation.x = Math.PI / 2;
-    bow.position.z = 0.82;
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.23, 0.24), steel);
-    bridge.position.set(0, 0.2, -0.4);
-    group.add(hull, bow, bridge);
-    for (let i = 0; i < 3; i += 1) {
-      const cargo = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.13, 0.22), material);
-      cargo.position.set(0, 0.18, -0.08 + i * 0.25);
-      group.add(cargo);
-    }
-  }
-  group.scale.setScalar(0.55);
-  return group;
+const AMBER = "#ffb454";
+const RED = "#ff5c5c";
+const GREEN = "#2fd682";
+const BG = "#0a0e14";
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function revealCount(t: number, total: number): number {
+  if (total <= 0) return 0;
+  // Soft cascade: reveal over first 45% of playback
+  const u = smoothstep(0.02, 0.45, t);
+  return Math.max(1, Math.ceil(u * total));
 }
 
 export default function GlobeView({
@@ -137,39 +121,106 @@ export default function GlobeView({
   playbackT = null,
   timeline = null,
   playing = false,
+  getT,
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 600, h: 600 });
   const [propStep, setPropStep] = useState(0);
-  const lastCamMode = useRef<string | null>(null);
+  const [globeReady, setGlobeReady] = useState(false);
+  const tickerEls = useRef(new Map<string, HTMLDivElement>());
+  const autoRotateRamp = useRef(0.25);
+  const lastCamKey = useRef("");
 
+  const playbackTRef = useRef(playbackT);
+  playbackTRef.current = playbackT;
+  const getTRef = useRef(getT);
+  getTRef.current = getT;
+  const liveT = useCallback(() => {
+    const fn = getTRef.current;
+    if (fn) return fn();
+    return playbackTRef.current ?? 0;
+  }, []);
+
+  // Stable datum stores — objects are built once per worldModel and then
+  // MUTATED in place; versions bump so memos hand three-globe the same
+  // object identities and it tweens style changes instead of exit+enter.
+  const arcMapRef = useRef(new Map<string, ArcDatum>());
+  const pointMapRef = useRef(new Map<string, PointDatum>());
+  const [arcVersion, setArcVersion] = useState(0);
+  const [pointVersion, setPointVersion] = useState(0);
+
+  // Debounced resize
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const apply = (width: number, height: number) => {
+      setDims({ w: Math.max(200, width), h: Math.max(200, height) });
+    };
+    apply(el.clientWidth, el.clientHeight);
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      setDims({ w: Math.max(200, width), h: Math.max(200, height) });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => apply(width, height), 120);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (timer) clearTimeout(timer);
+      ro.disconnect();
+    };
   }, []);
 
+  // Pixel ratio + damping once ready
   useEffect(() => {
+    if (!globeReady) return;
     const g = globeRef.current;
     if (!g) return;
-    g.controls().autoRotate = stage === "IDLE" && !playing;
-    g.controls().autoRotateSpeed = 0.25;
+    try {
+      const renderer = g.renderer();
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    } catch {
+      /* */
+    }
     g.controls().enableDamping = true;
-  }, [stage, playing]);
+    g.controls().dampingFactor = 0.08;
+  }, [globeReady]);
 
-  const handleGlobeReady = useCallback(() => {
-    const globe = globeRef.current;
-    if (!globe) return;
-    globe.pointOfView({ lat: 17, lng: 43, altitude: 1.72 }, 0);
-    globe.controls().autoRotate = stage === "IDLE" && !playing;
-  }, [stage, playing]);
+  // Auto-rotate ramp down when leaving idle
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady) return;
+    const wantIdle = stage === "IDLE" && !playing;
+    if (wantIdle) {
+      autoRotateRamp.current = 0.25;
+      g.controls().autoRotate = true;
+      g.controls().autoRotateSpeed = 0.25;
+      return;
+    }
+    // Ramp down over ~300ms
+    const start = performance.now();
+    const from = autoRotateRamp.current;
+    let raf = 0;
+    const step = (now: number) => {
+      const u = Math.min(1, (now - start) / 300);
+      const speed = from * (1 - u);
+      autoRotateRamp.current = speed;
+      const globe = globeRef.current;
+      if (!globe) return;
+      if (speed < 0.01) {
+        globe.controls().autoRotate = false;
+        globe.controls().autoRotateSpeed = 0;
+        return;
+      }
+      globe.controls().autoRotate = true;
+      globe.controls().autoRotateSpeed = speed;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [stage, playing, globeReady]);
 
+  // Non-playback cascade reveal
   useEffect(() => {
     if (playing && playbackT != null) return;
     if (stage !== "SIMULATE" && stage !== "MODEL" && stage !== "PROPOSE") {
@@ -196,20 +247,21 @@ export default function GlobeView({
   }, [worldModel]);
 
   const t = playing && playbackT != null ? playbackT : null;
+  const order = useMemo(
+    () => (propagationOrder.length ? propagationOrder : affectedNodes),
+    [propagationOrder, affectedNodes]
+  );
 
-  const visibleNodes = useMemo(() => {
-    if (t != null && timeline) {
-      const order = propagationOrder.length ? propagationOrder : affectedNodes;
-      const n = Math.max(1, Math.floor(t * Math.max(order.length, 1)));
-      return new Set(order.slice(0, n));
-    }
-    if (!propagationOrder.length && !affectedNodes.length)
-      return new Set<string>();
-    const order = propagationOrder.length ? propagationOrder : affectedNodes;
-    return new Set(order.slice(0, Math.max(1, propStep)));
-  }, [propagationOrder, affectedNodes, propStep, t, timeline]);
-
-  const laneFrozen = t != null ? t >= 0.05 : true;
+  // ---- Discrete style drivers (integers/booleans only — never raw t) ----
+  const revealedCount =
+    t != null
+      ? revealCount(t, Math.max(order.length, 1))
+      : Math.max(1, propStep);
+  const laneFrozen = t != null ? t >= 0.05 : stage !== "IDLE";
+  const rerouteOn =
+    t != null
+      ? smoothstep(0.42, 0.52, t) > 0.5
+      : stage === "PROPOSE";
   const wantsAir = selectedOutcomes.includes("air_travel");
   const airThinning =
     wantsAir &&
@@ -217,132 +269,185 @@ export default function GlobeView({
       stage === "SIMULATE" ||
       stage === "PROPOSE" ||
       stage === "AWAITING_APPROVAL");
+  const ringPhase: "on" | "fading" | "off" =
+    t == null ? "on" : t < 0.35 ? "on" : t < 0.55 ? "fading" : "off";
+  const visibleTickerCount =
+    t != null
+      ? tickers.filter(
+          (_, i) => t >= 0.72 + (i / Math.max(tickers.length, 1)) * 0.22
+        ).length
+      : stage === "SIMULATE" ||
+          stage === "PROPOSE" ||
+          stage === "AWAITING_APPROVAL" ||
+          stage === "DONE"
+        ? Math.min(tickers.length, Math.max(1, Math.floor(propStep / 2) + 1))
+        : 0;
 
-  const points: PointDatum[] = useMemo(() => {
-    if (!worldModel) return [];
-    return worldModel.nodes
-      .filter(
-        (n) =>
-          n.type === "chokepoint" || n.type === "port" || n.type === "hub"
-      )
-      .map((n) => {
-        const hit = visibleNodes.has(n.id) || n.id === epicenter;
-        const isEpi = n.id === epicenter;
-        return {
-          id: n.id,
-          lat: n.lat,
-          lng: n.lng,
-          size: isEpi ? 0.55 : hit ? 0.32 : 0.12,
-          color: isEpi ? "#ff453a" : hit ? "#ff9f0a" : "rgba(255,255,255,0.25)",
-          label: n.name,
-        };
-      });
-  }, [worldModel, visibleNodes, epicenter]);
-
-  const objectsData: ObjectDatum[] = useMemo(() => {
-    if (!timeline || t == null) return [];
-    const out: ObjectDatum[] = [];
-    for (const asset of timeline.assets) {
-      const pos = sampleAssetPosition(asset, t);
-      if (!pos) continue;
-      out.push({
-        id: asset.id,
-        lat: pos.lat,
-        lng: pos.lng,
-        alt: pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.01),
-        kind: asset.kind,
-        label: asset.label ?? asset.kind,
-      });
-    }
-    return out;
-  }, [timeline, t]);
-
-  const objectThreeObject = useCallback((d: object): Object3D => {
-    return makeGlyph((d as ObjectDatum).kind);
-  }, []);
-
-  const arcs: ArcDatum[] = useMemo(() => {
-    if (!worldModel) return [];
-    return worldModel.edges
-      .map((e) => {
-        const a = nodeMap.get(e.from);
-        const b = nodeMap.get(e.to);
-        if (!a || !b) return null;
+  // ---- Build stable datums ONCE per world model ----
+  useEffect(() => {
+    const arcMap = arcMapRef.current;
+    const pointMap = pointMapRef.current;
+    arcMap.clear();
+    pointMap.clear();
+    if (worldModel) {
+      const nm = new Map(worldModel.nodes.map((n) => [n.id, n]));
+      for (const e of worldModel.edges) {
+        const a = nm.get(e.from);
+        const b = nm.get(e.to);
+        if (!a || !b) continue;
         const isAir = e.lane_type === "air";
-        const disrupted = disruptedEdges.includes(e.id);
-        const hot =
-          (affectedEdges.includes(e.id) || disrupted) &&
-          (visibleNodes.has(e.from) || visibleNodes.has(e.to) || disrupted);
-        const traffic = e.traffic ?? 0.5;
-        const frozen = disrupted && hot && laneFrozen;
-        const showReroute =
-          playing && t != null && t >= 0.44 && disrupted && hot;
-
-        let color: string[] = [
-          "rgba(255,255,255,0.08)",
-          "rgba(255,255,255,0.08)",
-        ];
-        let stroke = isAir ? 0.25 : 0.35;
-        let dashTime =
-          stage === "IDLE" && !playing ? 0 : isAir ? 1800 : 2800;
-        let altitude = isAir ? 0.25 : 0.12;
-
-        if (showReroute) {
-          altitude = isAir ? 0.35 : 0.22;
-          color = ["rgba(48,209,88,0.35)", "rgba(48,209,88,0.7)"];
-          stroke = 0.9;
-          dashTime = 2200;
-        } else if (hot) {
-          if (isAir && airThinning) {
-            color = ["rgba(10,132,255,0.15)", "rgba(10,132,255,0.35)"];
-            stroke = 0.15;
-            dashTime = 4000;
-          } else if (frozen) {
-            color = ["#ff453a", "#ff9f0a"];
-            stroke = 1.4;
-            dashTime = 0;
-          } else {
-            color = ["#ff9f0a", "#ff453a"];
-            stroke = 1.1;
-          }
-        } else if (isAir) {
-          color = ["rgba(10,132,255,0.12)", "rgba(10,132,255,0.2)"];
-        }
-
-        return {
+        arcMap.set(e.id, {
           id: e.id,
           startLat: a.lat,
           startLng: a.lng,
           endLat: b.lat,
           endLng: b.lng,
-          color,
-          stroke,
-          dashLength: isAir ? 0.15 : 0.35 * traffic,
+          color: ["rgba(255,255,255,0.07)", "rgba(255,255,255,0.07)"],
+          stroke: isAir ? 0.25 : 0.35,
+          dashLength: isAir ? 0.15 : 0.35 * (e.traffic ?? 0.5),
           dashGap: isAir ? 0.08 : 0.2,
-          dashTime,
-          altitude,
-        };
-      })
-      .filter(Boolean) as ArcDatum[];
+          dashTime: 0,
+          altitude: isAir ? 0.25 : 0.12,
+          dashInitialGap: 0,
+          styleKey: "",
+        });
+      }
+      for (const n of worldModel.nodes) {
+        if (
+          n.type !== "chokepoint" &&
+          n.type !== "port" &&
+          n.type !== "hub" &&
+          n.type !== "refinery"
+        )
+          continue;
+        pointMap.set(n.id, {
+          id: n.id,
+          lat: n.lat,
+          lng: n.lng,
+          size: 0.12,
+          color: "rgba(255,255,255,0.22)",
+          label: n.name,
+          styleKey: "",
+        });
+      }
+    }
+    setArcVersion((v) => v + 1);
+    setPointVersion((v) => v + 1);
+  }, [worldModel]);
+
+  // ---- Style pass: mutate datums in place when discrete state changes ----
+  useEffect(() => {
+    if (!worldModel) return;
+    const revealed = new Set(order.slice(0, revealedCount));
+    if (epicenter) revealed.add(epicenter);
+
+    let pointChanged = false;
+    for (const p of pointMapRef.current.values()) {
+      const isEpi = p.id === epicenter;
+      const on = revealed.has(p.id);
+      const key = `${isEpi ? "e" : on ? "1" : "0"}`;
+      if (key === p.styleKey) continue;
+      p.styleKey = key;
+      p.size = isEpi ? 0.55 : on ? 0.34 : 0.12;
+      p.color = isEpi ? RED : on ? AMBER : "rgba(255,255,255,0.22)";
+      pointChanged = true;
+    }
+    if (pointChanged) setPointVersion((v) => v + 1);
+
+    const disrupted = new Set(disruptedEdges);
+    const affected = new Set(affectedEdges);
+    let arcChanged = false;
+    for (const e of worldModel.edges) {
+      const d = arcMapRef.current.get(e.id);
+      if (!d) continue;
+      const isAir = e.lane_type === "air";
+      const isDisrupted = disrupted.has(e.id);
+      const hot =
+        (affected.has(e.id) || isDisrupted) &&
+        (revealed.has(e.from) || revealed.has(e.to) || isDisrupted);
+      const frozen = isDisrupted && hot && laneFrozen;
+      const idleDash = stage === "IDLE" && !playing;
+
+      const key = [
+        hot ? 1 : 0,
+        frozen ? 1 : 0,
+        rerouteOn && hot ? 1 : 0,
+        airThinning && isAir ? 1 : 0,
+        idleDash ? 1 : 0,
+      ].join("");
+      if (key === d.styleKey) continue;
+      d.styleKey = key;
+
+      let color: string[] = [
+        "rgba(255,255,255,0.07)",
+        "rgba(255,255,255,0.07)",
+      ];
+      let stroke = isAir ? 0.25 : 0.35;
+      let dashTime = idleDash ? 0 : isAir ? 1800 : 2800;
+      let altitude = isAir ? 0.25 : 0.12;
+
+      if (hot && rerouteOn) {
+        altitude = (isAir ? 0.25 : 0.12) + 0.1;
+        color = ["rgba(47,214,130,0.45)", "rgba(47,214,130,0.8)"];
+        stroke = 0.95;
+        dashTime = 2200;
+      } else if (hot) {
+        if (isAir && airThinning) {
+          color = ["rgba(57,211,245,0.18)", "rgba(57,211,245,0.4)"];
+          stroke = 0.18;
+          dashTime = 4000;
+        } else if (frozen) {
+          // Frozen: slow dash rather than hard stop
+          color = [RED, AMBER];
+          stroke = 1.35;
+          dashTime = 12000;
+        } else {
+          color = [AMBER, RED];
+          stroke = 1.05;
+        }
+      } else if (isAir) {
+        color = ["rgba(57,211,245,0.1)", "rgba(57,211,245,0.18)"];
+      }
+
+      d.color = color;
+      d.stroke = stroke;
+      d.dashTime = dashTime;
+      d.altitude = altitude;
+      arcChanged = true;
+    }
+    if (arcChanged) setArcVersion((v) => v + 1);
   }, [
     worldModel,
-    nodeMap,
+    order,
+    revealedCount,
+    laneFrozen,
+    rerouteOn,
+    airThinning,
+    stage,
+    playing,
+    epicenter,
     affectedEdges,
     disruptedEdges,
-    visibleNodes,
-    stage,
-    airThinning,
-    laneFrozen,
-    playing,
-    t,
   ]);
+
+  // Same object identities across renders → three-globe tweens styles
+  const arcs = useMemo(
+    () => Array.from(arcMapRef.current.values()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [arcVersion]
+  );
+  const points = useMemo(
+    () => Array.from(pointMapRef.current.values()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pointVersion]
+  );
 
   const rings: RingDatum[] = useMemo(() => {
     if (!epicenter || !nodeMap.has(epicenter)) return [];
     if (stage === "IDLE" && !playing) return [];
+    if (playing && ringPhase === "off") return [];
     const n = nodeMap.get(epicenter)!;
-    const active = playing ? (t ?? 0) < 0.5 : true;
-    if (!active && playing) return [];
+    const alpha = playing && ringPhase === "fading" ? 0.3 : 0.65;
     return [
       {
         lat: n.lat,
@@ -350,104 +455,157 @@ export default function GlobeView({
         maxR: 3.5,
         propagationSpeed: 2.2,
         repeatPeriod: 1400,
+        color: `rgba(255,92,92,${alpha})`,
       },
     ];
-  }, [epicenter, nodeMap, stage, playing, t]);
-
-  const tickerEls: HtmlDatum[] = useMemo(() => {
-    if (!tickers.length) return [];
-    if (playing && t != null) {
-      const count = Math.max(
-        0,
-        Math.floor(((t - 0.72) / 0.28) * tickers.length)
-      );
-      return tickers.slice(0, Math.max(0, count)).map((tk) => ({
-        kind: "ticker" as const,
-        lat: tk.lat,
-        lng: tk.lng,
-        label: tk.label,
-        delta: tk.delta_pct,
-      }));
-    }
-    if (
-      stage !== "SIMULATE" &&
-      stage !== "PROPOSE" &&
-      stage !== "AWAITING_APPROVAL" &&
-      stage !== "DONE"
-    )
-      return [];
-    return tickers
-      .slice(0, Math.max(1, Math.floor(propStep / 2) + 1))
-      .map((tk) => ({
-        kind: "ticker" as const,
-        lat: tk.lat,
-        lng: tk.lng,
-        label: tk.label,
-        delta: tk.delta_pct,
-      }));
-  }, [tickers, stage, propStep, playing, t]);
+  }, [epicenter, nodeMap, stage, playing, ringPhase]);
 
   const htmlEls: HtmlDatum[] = useMemo(() => {
-    const ids = new Set<string>();
-    if (epicenter) ids.add(epicenter);
-    for (const id of visibleNodes) {
-      if (ids.size >= 4) break;
-      ids.add(id);
-    }
-    const labels = Array.from(ids)
-      .map((id) => {
-        const node = nodeMap.get(id);
-        if (!node) return null;
-        return {
-          kind: "node" as const,
-          lat: node.lat,
-          lng: node.lng,
-          label: node.name,
-        };
-      })
-      .filter(Boolean) as HtmlDatum[];
-    return [...labels, ...tickerEls];
-  }, [epicenter, visibleNodes, nodeMap, tickerEls]);
+    if (!tickers.length || visibleTickerCount <= 0) return [];
+    return tickers.slice(0, visibleTickerCount).map((tk, i) => ({
+      id: tk.node_id || `${tk.label}-${i}`,
+      lat: tk.lat,
+      lng: tk.lng,
+      label: tk.label,
+      delta: tk.delta_pct,
+    }));
+  }, [tickers, visibleTickerCount]);
+
+  // ---- Per-frame camera outside React ----
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady) return;
+    if (!playing || !visible) return;
+    if (!epicenter || !nodeMap.has(epicenter)) return;
+    const epi = nodeMap.get(epicenter)!;
+    const cut = timeline ? cutWindow(timeline) : null;
+
+    g.controls().enabled = false;
+    let raf = 0;
+    const loop = () => {
+      const globe = globeRef.current;
+      if (!globe) return;
+      globe.pointOfView(sampleCamera(liveT(), epi, cut), 0);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      // g captured at effect setup — the globe instance is stable for the
+      // component's lifetime, so re-enabling controls on it is safe.
+      g.controls().enabled = true;
+    };
+  }, [playing, visible, globeReady, epicenter, nodeMap, timeline, liveT]);
+
+  // ---- Asset props: direct scene management (no objectsData churn) ----
+  const assetGroupRef = useRef<{ group: object; meshes: Map<string, AssetMesh> } | null>(null);
 
   useEffect(() => {
-    if (!epicenter || !nodeMap.has(epicenter) || !globeRef.current) return;
+    const g = globeRef.current;
+    if (!g || !globeReady || !timeline) return;
+    // Globe.gl moves the camera (not the globe object) for POV/auto-rotate,
+    // and the ThreeGlobe object sits untransformed in the scene — so a group
+    // added directly to scene() stays geographically glued via getCoords.
+    const scene = g.scene() as unknown as {
+      add: (o: object) => void;
+      remove: (o: object) => void;
+    };
+    const group = makeLayerGroup() as unknown as {
+      add: (o: object) => void;
+      remove: (o: object) => void;
+    };
+    const meshes = new Map<string, AssetMesh>();
+    for (const asset of timeline.assets) {
+      const mesh = makeAssetIcon(asset.kind);
+      group.add(mesh);
+      meshes.set(asset.id, mesh);
+    }
+    scene.add(group);
+    assetGroupRef.current = { group, meshes };
+    return () => {
+      scene.remove(group);
+      for (const mesh of meshes.values()) disposeAssetMesh(mesh);
+      meshes.clear();
+      assetGroupRef.current = null;
+    };
+  }, [globeReady, timeline]);
+
+  // Hide the fleet during the tactical cutaway; keep it frozen after playback
+  useEffect(() => {
+    const entry = assetGroupRef.current;
+    if (!entry) return;
+    (entry.group as { visible: boolean }).visible = visible;
+  }, [visible, globeReady, timeline]);
+
+  // Per-frame prop posing
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g || !globeReady || !timeline || !playing || !visible) return;
+    let raf = 0;
+    const loop = () => {
+      const globe = globeRef.current;
+      const entry = assetGroupRef.current;
+      if (!globe || !entry) return;
+      const curT = liveT();
+      for (const asset of timeline.assets) {
+        const mesh = entry.meshes.get(asset.id);
+        if (!mesh) continue;
+        const op = sampleAssetOpacity(asset, curT);
+        if (op <= 0) {
+          (mesh as { visible: boolean }).visible = false;
+          continue;
+        }
+        const pos = sampleAssetPosition(asset, curT);
+        if (!pos) {
+          (mesh as { visible: boolean }).visible = false;
+          continue;
+        }
+        const alt = pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.012);
+        const c = globe.getCoords(pos.lat, pos.lng, alt);
+        const ahead =
+          sampleAssetPosition(asset, Math.min(1, curT + 0.004)) ?? pos;
+        const c2 = globe.getCoords(ahead.lat, ahead.lng, alt);
+        poseAssetMesh(mesh, c, c2, op);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, visible, globeReady, timeline, liveT]);
+
+  // Non-playback epicenter fly (once)
+  useEffect(() => {
+    if (!globeReady || !globeRef.current || playing) return;
+    if (!epicenter || !nodeMap.has(epicenter)) return;
     const n = nodeMap.get(epicenter)!;
-    if (!playing || t == null) {
-      globeRef.current.pointOfView(
-        { lat: n.lat, lng: n.lng, altitude: 1.6 },
-        1600
-      );
-      lastCamMode.current = null;
-      return;
-    }
-    let mode = "strike";
-    let altitude = 1.4;
-    if (t >= 0.78) {
-      mode = "impact";
-      altitude = 2.6;
-    } else if (t >= 0.5) {
-      mode = "adapt";
-      altitude = 2.2;
-    } else if (t >= 0.35) {
-      mode = "cascade";
-      altitude = 1.8;
-    }
-    if (lastCamMode.current !== mode) {
-      lastCamMode.current = mode;
-      const lngOffset = mode === "cascade" ? 12 : mode === "adapt" ? -18 : 0;
-      globeRef.current.pointOfView(
-        { lat: n.lat, lng: n.lng + lngOffset, altitude },
-        1400
-      );
-    }
-  }, [epicenter, nodeMap, playing, t]);
+    const key = `epi:${epicenter}`;
+    if (lastCamKey.current === key) return;
+    lastCamKey.current = key;
+    globeRef.current.pointOfView(
+      { lat: n.lat, lng: n.lng, altitude: 1.6 },
+      1600
+    );
+  }, [epicenter, nodeMap, playing, globeReady]);
 
   useEffect(() => {
-    if (!globeRef.current || playing) return;
+    if (!globeReady || !globeRef.current || playing) return;
     if (stage === "PROPOSE" || stage === "AWAITING_APPROVAL") {
       globeRef.current.pointOfView({ altitude: 2.1 }, 1800);
     }
-  }, [stage, playing]);
+  }, [stage, playing, globeReady]);
+
+  const htmlElement = useCallback((d: object) => {
+    const data = d as HtmlDatum;
+    let el = tickerEls.current.get(data.id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "ticker-chip ticker-chip-enter";
+      tickerEls.current.set(data.id, el);
+    }
+    const up = data.delta >= 0;
+    el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? RED : GREEN}">${up ? "+" : ""}${data.delta}%</span>`;
+    return el;
+  }, []);
 
   return (
     <div
@@ -455,25 +613,31 @@ export default function GlobeView({
       className="relative h-full w-full bg-atlas-bg"
       style={{
         opacity: visible ? 1 : 0,
+        transform: visible ? "scale(1)" : "scale(1.12)",
         pointerEvents: visible ? "auto" : "none",
-        transition: "opacity 500ms ease-out",
+        transition:
+          "opacity 650ms ease-out, transform 900ms cubic-bezier(0.4, 0, 0.2, 1)",
+        willChange: "opacity, transform",
+        zIndex: visible ? 1 : 0,
       }}
+      aria-hidden={!visible}
     >
       <Globe
         ref={globeRef}
         width={dims.w}
         height={dims.h}
-        backgroundColor="#02070d"
-        globeImageUrl="/earth-night.jpg"
-        bumpImageUrl="/earth-topology.png"
-        atmosphereColor="#39e7f2"
-        atmosphereAltitude={0.18}
-        onGlobeReady={handleGlobeReady}
+        backgroundColor={BG}
+        globeImageUrl={BLUE_MARBLE}
+        bumpImageUrl={TOPOLOGY}
+        atmosphereColor="#6eb6ff"
+        atmosphereAltitude={0.15}
+        onGlobeReady={() => setGlobeReady(true)}
         pointsData={points}
-        pointAltitude={0.01}
+        pointAltitude={0.015}
         pointRadius="size"
         pointColor="color"
         pointLabel={(d) => (d as PointDatum).label}
+        pointsTransitionDuration={400}
         arcsData={arcs}
         arcColor="color"
         arcStroke="stroke"
@@ -481,34 +645,20 @@ export default function GlobeView({
         arcDashLength="dashLength"
         arcDashGap="dashGap"
         arcDashAnimateTime="dashTime"
+        arcDashInitialGap="dashInitialGap"
+        arcsTransitionDuration={600}
         ringsData={rings}
-        ringColor={() => "rgba(255,69,58,0.7)"}
+        ringColor={(d: object) =>
+          (d as RingDatum).color ?? "rgba(255,92,92,0.65)"
+        }
         ringMaxRadius="maxR"
         ringPropagationSpeed="propagationSpeed"
         ringRepeatPeriod="repeatPeriod"
-        objectsData={objectsData}
-        objectLat="lat"
-        objectLng="lng"
-        objectAltitude="alt"
-        objectThreeObject={objectThreeObject}
         htmlElementsData={htmlEls}
-        htmlElement={(d) => {
-          const el = document.createElement("div");
-          const data = d as HtmlDatum;
-          if (data.kind === "node") {
-            el.className = "globe-node-label";
-            el.textContent = data.label;
-            return el;
-          }
-          const delta = data.delta ?? 0;
-          const up = delta >= 0;
-          el.className = "ticker-chip";
-          el.innerHTML = `<span style="color:rgba(255,255,255,0.55)">${data.label}</span> <span style="color:${up ? "#ff8a32" : "#31d9a0"}">${up ? "+" : ""}${delta}%</span>`;
-          return el;
-        }}
-        htmlAltitude={0.02}
+        htmlElement={htmlElement}
+        htmlAltitude={0.04}
       />
-      {eventTitle && stage !== "IDLE" && !playing && (
+      {eventTitle && stage !== "IDLE" && !playing && visible && (
         <div className="pointer-events-none absolute bottom-4 left-4 right-4">
           <p className="eyebrow">Event</p>
           <p className="mt-0.5 max-w-lg text-[13px] text-atlas-text">

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NexlaNexsetPositionBook",
+  "description": "Schema for ATLAS CAPITAL position-book Nexset (signals, orders, fills, P&L)",
+  "type": "object",
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "ts", "kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "ts": { "type": "string", "format": "date-time" },
+          "kind": {
+            "type": "string",
+            "enum": ["signal", "order", "fill", "pnl", "denial", "thesis"]
+          },
+          "market_id": { "type": "string" },
+          "side": { "type": "string", "enum": ["YES", "NO"] },
+          "size_usd": { "type": "number" },
+          "price": { "type": "number" },
+          "ev": { "type": "number" },
+          "confidence": { "type": "number" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "denied", "approved", "filled", "closed"]
+          },
+          "pnl_usd": { "type": "number" },
+          "thesis": { "type": "string" },
+          "audit": {
+            "type": "object",
+            "properties": {
+              "pomerium_decision": { "type": "string" },
+              "zero_tx": { "type": "string" },
+              "nexla_tool": { "type": "string" },
+              "akash_run_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

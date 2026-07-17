@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AtlasMcpToolContract",
+  "description": "MCP-style tool contract mirrored by local Nexla adapter (and live Nexla MCP when NEXLA_* env set)",
+  "tools": [
+    {
+      "name": "get_world_model",
+      "description": "Return the supply-chain world model graph (nodes, edges, markets)",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "map_event_to_nodes",
+      "description": "Map a geolocated event to affected world-model nodes and edges",
+      "inputSchema": {
+        "type": "object",
+        "required": ["epicenter_node", "implied_probability"],
+        "properties": {
+          "epicenter_node": { "type": "string" },
+          "implied_probability": { "type": "number" },
+          "max_hops": { "type": "integer", "default": 4 }
+        }
+      }
+    },
+    {
+      "name": "get_positions",
+      "description": "Return current position book entries",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "log_signal",
+      "description": "Write a trading signal to the position book Nexset",
+      "inputSchema": {
+        "type": "object",
+        "required": ["market_id", "side", "ev", "confidence"],
+        "properties": {
+          "market_id": { "type": "string" },
+          "side": { "type": "string" },
+          "ev": { "type": "number" },
+          "confidence": { "type": "number" },
+          "thesis": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "write_thesis",
+      "description": "Persist trade thesis text to the position book",
+      "inputSchema": {
+        "type": "object",
+        "required": ["thesis"],
+        "properties": {
+          "thesis": { "type": "string" },
+          "market_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "execute_trade",
+      "description": "Request trade execution (must pass Pomerium risk gate)",
+      "inputSchema": {
+        "type": "object",
+        "required": ["market_id", "side", "size_usd", "price"],
+        "properties": {
+          "market_id": { "type": "string" },
+          "side": { "type": "string" },
+          "size_usd": { "type": "number" },
+          "price": { "type": "number" }
+        }
+      }
+    },
+    {
+      "name": "record_fill",
+      "description": "Write a fill row to the position book after Zero execution",
+      "inputSchema": {
+        "type": "object",
+        "required": ["market_id", "side", "size_usd", "price"],
+        "properties": {
+          "market_id": { "type": "string" },
+          "side": { "type": "string" },
+          "size_usd": { "type": "number" },
+          "price": { "type": "number" },
+          "zero_tx": { "type": "string" }
+        }
+      }
+    }
+  ]
+}

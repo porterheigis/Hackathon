@@ -1,0 +1,80 @@
+# ATLAS CAPITAL — Pomerium risk officer
+# PPL mcp_tool policies = codified fund risk limits
+# Docs: https://www.pomerium.com/docs/capabilities/mcp
+
+authenticate:
+  idp_provider: "google"
+  idp_client_id: "${IDP_CLIENT_ID}"
+  idp_client_secret: "${IDP_CLIENT_SECRET}"
+
+databroker_storage_type: memory
+
+shared_secret: "${POMERIUM_SHARED_SECRET}"
+cookie_secret: "${POMERIUM_COOKIE_SECRET}"
+signing_key: "${POMERIUM_SIGNING_KEY}"
+
+routes:
+  # Nexla MCP behind Pomerium — all fund tool traffic
+  - from: https://atlas-mcp.localhost.pomerium.io
+    to: https://api-genai.nexla.io
+    name: atlas-nexla-mcp
+    pass_identity_headers: true
+    policy:
+      # Read / research tools — trader-agent service account
+      - allow:
+          and:
+            - mcp_tool:
+                is: get_world_model
+            - service_account:
+                is: trader-agent
+      - allow:
+          and:
+            - mcp_tool:
+                is: map_event_to_nodes
+            - service_account:
+                is: trader-agent
+      - allow:
+          and:
+            - mcp_tool:
+                is: get_positions
+            - service_account:
+                is: trader-agent
+      - allow:
+          and:
+            - mcp_tool:
+                is: log_signal
+            - service_account:
+                is: trader-agent
+      - allow:
+          and:
+            - mcp_tool:
+                is: write_thesis
+            - service_account:
+                is: trader-agent
+      - allow:
+          and:
+            - mcp_tool:
+                is: record_fill
+            - service_account:
+                is: trader-agent
+      # execute_trade — ONLY via risk-approved identity AND within stake limit
+      - allow:
+          and:
+            - mcp_tool:
+                is: execute_trade
+            - service_account:
+                is: risk-approved
+            - mcp_tool_param:
+                name: size_usd
+                numeric_less_or_equal: 2.0
+      # Explicit deny for oversized stakes (demo denial beat)
+      - deny:
+          and:
+            - mcp_tool:
+                is: execute_trade
+            - mcp_tool_param:
+                name: size_usd
+                numeric_greater_than: 2.0
+
+# Local adapter mirrors these limits when Pomerium is not running:
+# MAX_STAKE_USD=2.00 — any execute_trade above this is DENIED

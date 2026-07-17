@@ -8,7 +8,7 @@
 
 Use one of:
 
-- Track-prefixed: `atlas/<short-desc>`, `teammate-b/<short-desc>`, `teammate-c/<short-desc>`
+- Track-prefixed: `atlas/<short-desc>`, `teammate-b/<short-desc>`, `chain-alpha/<short-desc>`
 - Feature form: `feat/<name>/<short-desc>` (e.g. `feat/atlas/globe-arcs`)
 
 Examples:
@@ -24,7 +24,7 @@ git checkout -b feat/teammate-b/landing-prototype
 ## Workflow
 
 1. **Sync** — `git pull origin main` before starting.
-2. **Scope** — Change files under your track (`apps/atlas`, `apps/teammate-b`, or `apps/teammate-c`). Coordinate before editing `packages/shared`.
+2. **Scope** — Change files under your track (`apps/atlas`, `apps/teammate-b`, or `apps/chain-alpha`). Coordinate before editing `packages/shared`.
 3. **Commit** — Clear messages; no secrets (`.env`, keys, tokens).
 4. **Push** — `git push -u origin HEAD`
 5. **PR** — Open against `main`. Include:

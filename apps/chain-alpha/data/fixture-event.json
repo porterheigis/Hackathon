@@ -1,0 +1,42 @@
+{
+  "id": "evt-red-sea-2026-07",
+  "ts": "2026-07-17T18:00:00.000Z",
+  "title": "Red Sea transit risk premium spikes as vessel diversions accelerate",
+  "summary": "Multiple carriers announce Cape of Good Hope diversions after renewed Houthi activity near Bab el-Mandeb. Asia–Europe container rates jump; Brent ticks higher on freight-adjusted landed cost.",
+  "source": "zero://prediction-markets/news/fixture",
+  "epicenter_node": "bab-el-mandeb",
+  "lat": 12.58,
+  "lng": 43.33,
+  "implied_probability": 0.68,
+  "markets": [
+    {
+      "id": "mkt-red-sea-disruption",
+      "question": "Will Red Sea shipping disruption persist through Q3?",
+      "yes_price": 0.68,
+      "no_price": 0.32,
+      "volume_24h": 142000,
+      "zero_service": "polymarket-odds-v1"
+    },
+    {
+      "id": "mkt-freight-spike",
+      "question": "Will Asia–Europe container freight rise >20% MoM?",
+      "yes_price": 0.54,
+      "no_price": 0.46,
+      "volume_24h": 38000,
+      "zero_service": "polymarket-odds-v1"
+    },
+    {
+      "id": "mkt-brent-above-85",
+      "question": "Will Brent crude settle above $85/bbl this month?",
+      "yes_price": 0.41,
+      "no_price": 0.59,
+      "volume_24h": 91000,
+      "zero_service": "kalshi-odds-v1"
+    }
+  ],
+  "news_headlines": [
+    "Maersk extends Red Sea diversion through August",
+    "War-risk premiums on Bab el-Mandeb voyages hit 2024 highs",
+    "Shanghai–Rotterdam spot freight +18% week-over-week"
+  ]
+}

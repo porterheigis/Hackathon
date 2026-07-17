@@ -1,0 +1,44 @@
+---
+# ChainAlpha — Akash Monte Carlo supply-chain simulation worker
+# Deploy via https://console.akash.network/
+version: "2.0"
+
+services:
+  chainalpha-sim:
+    image: ghcr.io/chainalpha/sim-worker:latest
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+    env:
+      - WORKER_NAME=chainalpha-supply-sim
+      - N_SIMS=5000
+
+profiles:
+  compute:
+    chainalpha-sim:
+      resources:
+        cpu:
+          units: 1.0
+        memory:
+          size: 1Gi
+        storage:
+          size: 1Gi
+  placement:
+    akash:
+      attributes:
+        host: akash
+      signedBy:
+        anyOf:
+          - akash1365yvmc4s7fdkdyejau32du9mq47ndc48vtwd2
+      pricing:
+        chainalpha-sim:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  chainalpha-sim:
+    akash:
+      profile: chainalpha-sim
+      count: 1

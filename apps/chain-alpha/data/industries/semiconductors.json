@@ -1,0 +1,62 @@
+{
+  "id": "semiconductors",
+  "name": "Semiconductors",
+  "worldModel": {
+    "version": "1.0.0",
+    "name": "chainalpha-semiconductors-v0",
+    "description": "Semiconductor supply-chain world model: fabs, OSAT, materials, litho equipment, logistics, demand.",
+    "nodes": [
+      { "id": "tw-north-fabs", "name": "Northern Taiwan Fabs", "type": "origin", "lat": 24.8, "lng": 121.0, "region": "e-asia", "company": "TSMC", "facilityType": "fab", "products": ["logic-wafers", "gpu-dies", "ai-accelerators"], "capacity": 100, "inventoryDays": 30, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "tw-south-osat", "name": "Southern Taiwan Packaging / OSAT", "type": "origin", "lat": 22.6, "lng": 120.3, "region": "e-asia", "company": "TSMC", "facilityType": "packaging", "products": ["cowos", "packaged-dies"], "capacity": 80, "inventoryDays": 25, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "taiwan-strait", "name": "Taiwan Strait", "type": "chokepoint", "lat": 24.0, "lng": 119.5, "region": "e-asia", "facilityType": "strait", "capacity": 100, "commodities": ["semiconductors", "container"], "status": "normal" },
+      { "id": "jp-materials", "name": "Japan Materials", "type": "origin", "lat": 35.5, "lng": 139.6, "region": "japan", "company": "Shin-Etsu / JSR", "facilityType": "materials", "products": ["photoresist", "silicon-wafers", "specialty-gases"], "capacity": 90, "inventoryDays": 20, "commodities": ["materials"], "status": "normal" },
+      { "id": "jp-equipment", "name": "Japan Semiconductor Equipment", "type": "origin", "lat": 35.7, "lng": 139.7, "region": "japan", "company": "Tokyo Electron", "facilityType": "equipment", "products": ["etch-tools", "deposition-tools", "coater-developer"], "capacity": 85, "inventoryDays": 45, "commodities": ["equipment"], "status": "normal" },
+      { "id": "nl-asml", "name": "Netherlands / ASML", "type": "origin", "lat": 51.41, "lng": 5.46, "region": "n-europe", "company": "ASML", "facilityType": "equipment", "products": ["euv-litho", "duv-litho"], "capacity": 80, "inventoryDays": 60, "commodities": ["equipment"], "status": "normal" },
+      { "id": "my-assembly", "name": "Malaysia Assembly & Test", "type": "hub", "lat": 5.41, "lng": 100.33, "region": "se-asia", "company": "OSAT (Penang)", "facilityType": "assembly", "products": ["packaged-dies", "modules"], "capacity": 70, "inventoryDays": 22, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "us-west-logistics", "name": "US West Coast Logistics", "type": "port", "lat": 33.73, "lng": -118.26, "region": "americas", "facilityType": "logistics", "capacity": 100, "commodities": ["container", "semiconductors"], "status": "normal" },
+      { "id": "us-cloud-demand", "name": "US Cloud / Customer Demand", "type": "hub", "lat": 37.4, "lng": -122.0, "region": "americas", "company": "Hyperscalers", "facilityType": "demand", "products": ["ai-clusters", "datacenter-gpus"], "capacity": 100, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "mx-assembly", "name": "Mexico Assembly", "type": "hub", "lat": 20.67, "lng": -103.35, "region": "americas", "company": "Contract Assembly", "facilityType": "assembly", "products": ["boards", "modules"], "capacity": 55, "inventoryDays": 18, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "intel-us", "name": "Intel US Capacity", "type": "origin", "lat": 33.32, "lng": -111.87, "region": "americas", "company": "Intel", "facilityType": "fab", "products": ["logic-wafers", "foundry-services"], "capacity": 60, "inventoryDays": 40, "commodities": ["semiconductors"], "status": "normal" },
+      { "id": "alt-capacity", "name": "Alternative Foundry Capacity", "type": "origin", "lat": 32.9, "lng": -96.9, "region": "americas", "company": "Samsung / GlobalFoundries", "facilityType": "fab", "products": ["logic-wafers"], "capacity": 45, "inventoryDays": 35, "commodities": ["semiconductors"], "status": "normal" }
+    ],
+    "edges": [
+      { "id": "s-euv", "from": "nl-asml", "to": "tw-north-fabs", "mode": "dependency", "product": "euv-litho", "decay": 0.95, "leadTimeDays": 180, "substitutability": 0.05, "capacity": 100, "commodity": "equipment", "status": "normal" },
+      { "id": "s-jpmat-tw", "from": "jp-materials", "to": "tw-north-fabs", "mode": "air", "product": "photoresist", "decay": 0.9, "leadTimeDays": 21, "substitutability": 0.3, "capacity": 90, "commodity": "materials", "status": "normal" },
+      { "id": "s-jpeq-tw", "from": "jp-equipment", "to": "tw-north-fabs", "mode": "dependency", "product": "etch-tools", "decay": 0.88, "leadTimeDays": 120, "substitutability": 0.2, "capacity": 85, "commodity": "equipment", "status": "normal" },
+      { "id": "s-jpmat-intel", "from": "jp-materials", "to": "intel-us", "mode": "air", "product": "photoresist", "decay": 0.85, "leadTimeDays": 24, "substitutability": 0.3, "capacity": 80, "commodity": "materials", "status": "normal" },
+      { "id": "s-jpeq-intel", "from": "jp-equipment", "to": "intel-us", "mode": "dependency", "product": "deposition-tools", "decay": 0.82, "leadTimeDays": 130, "substitutability": 0.25, "capacity": 70, "commodity": "equipment", "status": "normal" },
+      { "id": "s-euv-intel", "from": "nl-asml", "to": "intel-us", "mode": "dependency", "product": "euv-litho", "decay": 0.8, "leadTimeDays": 200, "substitutability": 0.05, "capacity": 60, "commodity": "equipment", "status": "normal" },
+      { "id": "s-fab-osat", "from": "tw-north-fabs", "to": "tw-south-osat", "mode": "land", "product": "logic-wafers", "decay": 0.95, "leadTimeDays": 5, "substitutability": 0.4, "capacity": 90, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-osat-strait", "from": "tw-south-osat", "to": "taiwan-strait", "mode": "sea", "product": "packaged-dies", "decay": 0.9, "leadTimeDays": 3, "substitutability": 0.5, "capacity": 85, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-fab-strait", "from": "tw-north-fabs", "to": "taiwan-strait", "mode": "sea", "product": "logic-wafers", "decay": 0.88, "leadTimeDays": 3, "substitutability": 0.5, "capacity": 85, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-strait-my", "from": "taiwan-strait", "to": "my-assembly", "mode": "sea", "product": "packaged-dies", "decay": 0.85, "leadTimeDays": 8, "substitutability": 0.6, "capacity": 80, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-strait-uswest", "from": "taiwan-strait", "to": "us-west-logistics", "mode": "sea", "product": "packaged-dies", "decay": 0.8, "leadTimeDays": 18, "substitutability": 0.55, "capacity": 90, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-my-uswest", "from": "my-assembly", "to": "us-west-logistics", "mode": "sea", "product": "modules", "decay": 0.82, "leadTimeDays": 20, "substitutability": 0.6, "capacity": 75, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-uswest-demand", "from": "us-west-logistics", "to": "us-cloud-demand", "mode": "land", "product": "datacenter-gpus", "decay": 0.92, "leadTimeDays": 4, "substitutability": 0.7, "capacity": 100, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-mx-demand", "from": "mx-assembly", "to": "us-cloud-demand", "mode": "land", "product": "boards", "decay": 0.85, "leadTimeDays": 6, "substitutability": 0.65, "capacity": 55, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-intel-demand", "from": "intel-us", "to": "us-cloud-demand", "mode": "land", "product": "logic-wafers", "decay": 0.8, "leadTimeDays": 10, "substitutability": 0.6, "capacity": 60, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-alt-demand", "from": "alt-capacity", "to": "us-cloud-demand", "mode": "land", "product": "logic-wafers", "decay": 0.7, "leadTimeDays": 14, "substitutability": 0.5, "capacity": 45, "commodity": "semiconductors", "status": "normal" },
+      { "id": "s-osat-my", "from": "tw-south-osat", "to": "my-assembly", "mode": "sea", "product": "packaged-dies", "decay": 0.83, "leadTimeDays": 9, "substitutability": 0.6, "capacity": 70, "commodity": "semiconductors", "status": "normal" }
+    ],
+    "markets": [
+      { "id": "mkt-gpu-supply", "question": "Will AI-GPU lead times exceed 26 weeks this quarter?", "nodes": ["tw-north-fabs", "tw-south-osat", "us-cloud-demand"], "side": "YES" },
+      { "id": "mkt-soxx-drawdown", "question": "Will the semiconductor index draw down >10% over the horizon?", "nodes": ["tw-north-fabs", "taiwan-strait", "us-cloud-demand"], "side": "YES" }
+    ]
+  },
+  "portfolio": [
+    { "id": "NVDA", "name": "NVIDIA", "exposureUsd": 4200000, "portfolioPercent": 34.0, "shockBeta": -1.0 },
+    { "id": "AMD", "name": "AMD", "exposureUsd": 1650000, "portfolioPercent": 13.4, "shockBeta": -0.7 },
+    { "id": "TSM", "name": "TSMC", "exposureUsd": 2400000, "portfolioPercent": 19.4, "shockBeta": -0.9 },
+    { "id": "INTC", "name": "Intel", "exposureUsd": 1100000, "portfolioPercent": 8.9, "shockBeta": 0.6 },
+    { "id": "ASML", "name": "ASML", "exposureUsd": 1450000, "portfolioPercent": 11.7, "shockBeta": -0.3 },
+    { "id": "SOXX", "name": "SOXX (Semi Hedge)", "exposureUsd": 1550000, "portfolioPercent": 12.6, "shockBeta": -0.8 }
+  ],
+  "companies": [
+    { "companyId": "NVDA", "companyName": "NVIDIA", "baseDirection": "negative", "baseSeverity": "high", "exposureWeight": 1.0, "revenueScaleUsd": 130000000000, "reason": "Datacenter GPUs are fabbed at Northern Taiwan fabs and CoWoS-packaged in southern Taiwan; supply is directly constrained.", "nodes": ["tw-north-fabs", "tw-south-osat"] },
+    { "companyId": "AMD", "companyName": "AMD", "baseDirection": "negative", "baseSeverity": "medium", "exposureWeight": 0.7, "revenueScaleUsd": 25000000000, "reason": "MI-series accelerators share TSMC leading-edge and CoWoS capacity; smaller absolute AI mix than NVIDIA.", "nodes": ["tw-north-fabs", "tw-south-osat"] },
+    { "companyId": "TSM", "companyName": "TSMC", "baseDirection": "negative", "baseSeverity": "critical", "exposureWeight": 1.0, "revenueScaleUsd": 90000000000, "reason": "Directly operates the disrupted Northern Taiwan fabs; leading-edge output halts during shutdown and ramp.", "nodes": ["tw-north-fabs", "tw-south-osat"] },
+    { "companyId": "INTC", "companyName": "Intel", "baseDirection": "positive", "baseSeverity": "medium", "exposureWeight": 0.6, "revenueScaleUsd": 55000000000, "reason": "US foundry capacity becomes a scarce alternative; foundry pipeline and pricing power improve.", "nodes": ["intel-us"] },
+    { "companyId": "ASML", "companyName": "ASML", "baseDirection": "mixed", "baseSeverity": "low", "exposureWeight": 0.3, "revenueScaleUsd": 30000000000, "reason": "Near-term Taiwan tool installs slip, but multi-year EUV backlog and Intel/US demand cushion the impact.", "nodes": ["nl-asml"] },
+    { "companyId": "CLOUD", "companyName": "Cloud Providers", "baseDirection": "negative", "baseSeverity": "high", "exposureWeight": 0.85, "revenueScaleUsd": 200000000000, "reason": "AI cluster build-outs slip as datacenter-GPU deliveries are delayed; capex timing and cloud capacity affected.", "nodes": ["us-cloud-demand"] }
+  ]
+}

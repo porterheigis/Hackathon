@@ -1,0 +1,23 @@
+{
+  "id": "taiwan-earthquake",
+  "industry": "semiconductors",
+  "worldModelId": "semiconductors",
+  "targetCompany": "NVDA",
+  "title": "Major earthquake — Northern Taiwan semiconductor shutdown",
+  "prompt": "A major earthquake shuts down semiconductor production in northern Taiwan for three weeks. Shipping capacity through the Taiwan Strait falls by 40%. Model the operational and financial consequences and propose a hedged trade.",
+  "eventType": "earthquake",
+  "epicenterNode": "tw-north-fabs",
+  "durationDays": 21,
+  "horizonDays": 84,
+  "shocks": [
+    { "targetType": "node", "targetId": "tw-north-fabs", "metric": "manufacturing_capacity", "changePercent": -65 },
+    { "targetType": "node", "targetId": "tw-south-osat", "metric": "packaging_capacity", "changePercent": -45 },
+    { "targetType": "edge", "targetId": "s-osat-strait", "metric": "shipping_capacity", "changePercent": -40 },
+    { "targetType": "edge", "targetId": "s-fab-strait", "metric": "shipping_capacity", "changePercent": -40 },
+    { "targetType": "edge", "targetId": "s-strait-uswest", "metric": "shipping_capacity", "changePercent": -40 }
+  ],
+  "secondaryShockId": "japan-export-restriction",
+  "source": "curated",
+  "alternativeNodes": ["intel-us", "alt-capacity", "mx-assembly"],
+  "beneficiaryNodes": ["intel-us"]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "taiwan-strait-closure",
+  "industry": "semiconductors",
+  "worldModelId": "semiconductors",
+  "targetCompany": "NVDA",
+  "title": "Taiwan Strait blockade — semiconductor logistics constrained",
+  "prompt": "A naval standoff closes the Taiwan Strait to commercial shipping for two weeks, cutting outbound semiconductor logistics by 70%. Fabs keep running but finished dies cannot ship. Model the consequences and propose a hedged trade.",
+  "eventType": "strait-closure",
+  "epicenterNode": "taiwan-strait",
+  "durationDays": 14,
+  "horizonDays": 70,
+  "shocks": [
+    { "targetType": "node", "targetId": "taiwan-strait", "metric": "shipping_capacity", "changePercent": -70 },
+    { "targetType": "edge", "targetId": "s-osat-strait", "metric": "shipping_capacity", "changePercent": -70 },
+    { "targetType": "edge", "targetId": "s-fab-strait", "metric": "shipping_capacity", "changePercent": -70 },
+    { "targetType": "edge", "targetId": "s-strait-uswest", "metric": "shipping_capacity", "changePercent": -65 },
+    { "targetType": "edge", "targetId": "s-strait-my", "metric": "shipping_capacity", "changePercent": -60 }
+  ],
+  "secondaryShockId": "japan-export-restriction",
+  "source": "curated",
+  "alternativeNodes": ["intel-us", "alt-capacity", "mx-assembly"],
+  "beneficiaryNodes": ["intel-us"]
+}

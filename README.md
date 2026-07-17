@@ -11,12 +11,14 @@ Three teammates ship independent codebases in parallel. We merge the best of eac
   README.md                 # you are here
   CONTRIBUTING.md           # branch + PR workflow
   apps/
-    atlas/                  # Track A — ATLAS CAPITAL (Next.js + Akash + Pomerium)
-    teammate-b/             # Track B — your independent build
-    teammate-c/             # Track C — your independent build
+    atlas         Existing Atlas track (unchanged)
+    teammate-b    Teammate B track
+    chain-alpha   ChainAlpha track
   packages/
     shared/                 # optional shared types/utils (later)
 ```
+
+> Note: the former `apps/teammate-c` track has been removed/replaced by `apps/chain-alpha` (**ChainAlpha — supply-chain world model and trading simulation**).
 
 ## Clone
 
@@ -31,7 +33,7 @@ cd Hackathon
 | --- | --- | --- | --- |
 | A — Atlas | `apps/atlas/` | `atlas/*` or `feat/atlas/...` | Existing product; run from this folder |
 | B | `apps/teammate-b/` | `teammate-b/*` or `feat/<name>/...` | Scaffold your own stack here |
-| C | `apps/teammate-c/` | `teammate-c/*` or `feat/<name>/...` | Scaffold your own stack here |
+| ChainAlpha | `apps/chain-alpha/` | `chain-alpha/*` or `feat/<name>/...` | ChainAlpha — supply-chain world model and trading simulation |
 
 Each app should be **independently buildable** (own `package.json` / lockfile / README). Do not break another track’s install to ship yours.
 

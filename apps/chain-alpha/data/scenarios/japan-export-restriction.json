@@ -1,0 +1,23 @@
+{
+  "id": "japan-export-restriction",
+  "industry": "semiconductors",
+  "worldModelId": "semiconductors",
+  "targetCompany": "INTC",
+  "title": "Japan export restrictions on semiconductor equipment & materials",
+  "prompt": "Japan introduces export restrictions on semiconductor manufacturing equipment and photoresist materials. Alternative capacity that the mitigation plan relied on is now constrained. Re-model and revise the strategy.",
+  "eventType": "export-restriction",
+  "epicenterNode": "jp-equipment",
+  "durationDays": 60,
+  "horizonDays": 84,
+  "shocks": [
+    { "targetType": "node", "targetId": "jp-equipment", "metric": "export_capacity", "changePercent": -55 },
+    { "targetType": "node", "targetId": "jp-materials", "metric": "export_capacity", "changePercent": -50 },
+    { "targetType": "edge", "targetId": "s-jpeq-intel", "metric": "delivery_capacity", "changePercent": -60 },
+    { "targetType": "edge", "targetId": "s-jpmat-intel", "metric": "delivery_capacity", "changePercent": -55 },
+    { "targetType": "node", "targetId": "intel-us", "metric": "alternative_capacity", "changePercent": -35 },
+    { "targetType": "node", "targetId": "alt-capacity", "metric": "alternative_capacity", "changePercent": -30 }
+  ],
+  "source": "curated",
+  "alternativeNodes": ["mx-assembly"],
+  "beneficiaryNodes": []
+}

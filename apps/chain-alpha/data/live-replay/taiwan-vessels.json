@@ -1,0 +1,362 @@
+[
+  {
+    "id": "twn-v-000",
+    "displayName": "MV TWN-1000",
+    "lat": 24.8242,
+    "lon": 119.9182,
+    "headingDegrees": 151,
+    "speedKnots": 16.3,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-001",
+    "displayName": "MV TWN-1001",
+    "lat": 24.3674,
+    "lon": 120.3828,
+    "headingDegrees": 106,
+    "speedKnots": 13.4,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-002",
+    "displayName": "MV TWN-1002",
+    "lat": 24.0823,
+    "lon": 120.3363,
+    "headingDegrees": 324,
+    "speedKnots": 8.3,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-003",
+    "displayName": "MV TWN-1003",
+    "lat": 23.6082,
+    "lon": 121.3052,
+    "headingDegrees": 222,
+    "speedKnots": 9.1,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-004",
+    "displayName": "MV TWN-1004",
+    "lat": 25.041,
+    "lon": 120.6606,
+    "headingDegrees": 325,
+    "speedKnots": 10.7,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-005",
+    "displayName": "MV TWN-1005",
+    "lat": 24.8574,
+    "lon": 120.71,
+    "headingDegrees": 247,
+    "speedKnots": 17.7,
+    "category": "General Cargo",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-006",
+    "displayName": "MV TWN-1006",
+    "lat": 24.2098,
+    "lon": 120.7064,
+    "headingDegrees": 43,
+    "speedKnots": 12.3,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-007",
+    "displayName": "MV TWN-1007",
+    "lat": 24.2609,
+    "lon": 120.7197,
+    "headingDegrees": 303,
+    "speedKnots": 8,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-008",
+    "displayName": "MV TWN-1008",
+    "lat": 24.2566,
+    "lon": 120.7092,
+    "headingDegrees": 21,
+    "speedKnots": 13,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-009",
+    "displayName": "MV TWN-1009",
+    "lat": 22.9517,
+    "lon": 120.4044,
+    "headingDegrees": 103,
+    "speedKnots": 13.8,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-010",
+    "displayName": "MV TWN-1010",
+    "lat": 24.4401,
+    "lon": 121.2655,
+    "headingDegrees": 266,
+    "speedKnots": 15.4,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-011",
+    "displayName": "MV TWN-1011",
+    "lat": 24.4889,
+    "lon": 121.0995,
+    "headingDegrees": 227,
+    "speedKnots": 14.3,
+    "category": "General Cargo",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-012",
+    "displayName": "MV TWN-1012",
+    "lat": 23.9434,
+    "lon": 120.116,
+    "headingDegrees": 48,
+    "speedKnots": 8.2,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-013",
+    "displayName": "MV TWN-1013",
+    "lat": 25.1076,
+    "lon": 120.9967,
+    "headingDegrees": 23,
+    "speedKnots": 12.2,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-014",
+    "displayName": "MV TWN-1014",
+    "lat": 29.0269,
+    "lon": 124.8291,
+    "headingDegrees": 75,
+    "speedKnots": 11.5,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-015",
+    "displayName": "MV TWN-1015",
+    "lat": 29.3207,
+    "lon": 125.9377,
+    "headingDegrees": 176,
+    "speedKnots": 10.4,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-016",
+    "displayName": "MV TWN-1016",
+    "lat": 28.6561,
+    "lon": 124.0322,
+    "headingDegrees": 158,
+    "speedKnots": 12.7,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-017",
+    "displayName": "MV TWN-1017",
+    "lat": 31.3543,
+    "lon": 125.8176,
+    "headingDegrees": 57,
+    "speedKnots": 11.3,
+    "category": "General Cargo",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-018",
+    "displayName": "MV TWN-1018",
+    "lat": 30.3559,
+    "lon": 124.2043,
+    "headingDegrees": 9,
+    "speedKnots": 17,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-019",
+    "displayName": "MV TWN-1019",
+    "lat": 30.916,
+    "lon": 124.2934,
+    "headingDegrees": 49,
+    "speedKnots": 16.2,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-020",
+    "displayName": "MV TWN-1020",
+    "lat": 30.8671,
+    "lon": 124.1918,
+    "headingDegrees": 223,
+    "speedKnots": 12.3,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-021",
+    "displayName": "MV TWN-1021",
+    "lat": 27.9564,
+    "lon": 122.6866,
+    "headingDegrees": 283,
+    "speedKnots": 17.6,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-022",
+    "displayName": "MV TWN-1022",
+    "lat": 30.061,
+    "lon": 122.6209,
+    "headingDegrees": 69,
+    "speedKnots": 12.3,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-023",
+    "displayName": "MV TWN-1023",
+    "lat": 31.1607,
+    "lon": 123.8618,
+    "headingDegrees": 63,
+    "speedKnots": 15.9,
+    "category": "General Cargo",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-024",
+    "displayName": "MV TWN-1024",
+    "lat": 28.6213,
+    "lon": 125.6355,
+    "headingDegrees": 35,
+    "speedKnots": 12.5,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-025",
+    "displayName": "MV TWN-1025",
+    "lat": 30.5571,
+    "lon": 124.4854,
+    "headingDegrees": 356,
+    "speedKnots": 17.7,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-026",
+    "displayName": "MV TWN-1026",
+    "lat": 18.9716,
+    "lon": 114.9453,
+    "headingDegrees": 26,
+    "speedKnots": 12.1,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-027",
+    "displayName": "MV TWN-1027",
+    "lat": 20.7886,
+    "lon": 116.1349,
+    "headingDegrees": 288,
+    "speedKnots": 13.5,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-028",
+    "displayName": "MV TWN-1028",
+    "lat": 19.0272,
+    "lon": 116.8056,
+    "headingDegrees": 139,
+    "speedKnots": 13.6,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-029",
+    "displayName": "MV TWN-1029",
+    "lat": 19.4249,
+    "lon": 114.5445,
+    "headingDegrees": 270,
+    "speedKnots": 10.4,
+    "category": "General Cargo",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-030",
+    "displayName": "MV TWN-1030",
+    "lat": 19.9528,
+    "lon": 116.3902,
+    "headingDegrees": 301,
+    "speedKnots": 12,
+    "category": "Container Vessel",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-031",
+    "displayName": "MV TWN-1031",
+    "lat": 19.4826,
+    "lon": 114.6108,
+    "headingDegrees": 179,
+    "speedKnots": 17.8,
+    "category": "Bulk Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-032",
+    "displayName": "MV TWN-1032",
+    "lat": 19.5704,
+    "lon": 115.6808,
+    "headingDegrees": 55,
+    "speedKnots": 8,
+    "category": "Crude Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-033",
+    "displayName": "MV TWN-1033",
+    "lat": 19.9684,
+    "lon": 115.0806,
+    "headingDegrees": 139,
+    "speedKnots": 16.4,
+    "category": "Product Tanker",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-034",
+    "displayName": "MV TWN-1034",
+    "lat": 18.875,
+    "lon": 116.6833,
+    "headingDegrees": 249,
+    "speedKnots": 14.4,
+    "category": "Ro-Ro Carrier",
+    "source": "replay"
+  },
+  {
+    "id": "twn-v-035",
+    "displayName": "MV TWN-1035",
+    "lat": 20.1351,
+    "lon": 116.666,
+    "headingDegrees": 334,
+    "speedKnots": 15.4,
+    "category": "General Cargo",
+    "source": "replay"
+  }
+]

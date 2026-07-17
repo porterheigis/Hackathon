@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NexlaNexsetWorldModel",
+  "description": "Schema for ChainAlpha world-model Nexset (supply-chain graph)",
+  "type": "object",
+  "required": ["version", "nodes", "edges", "markets"],
+  "properties": {
+    "version": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "type", "lat", "lng"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["chokepoint", "port", "commodity", "lane", "hub", "refinery", "yard", "origin", "fab", "packaging", "materials", "equipment", "assembly", "logistics", "demand"]
+          },
+          "lat": { "type": "number" },
+          "lng": { "type": "number" },
+          "region": { "type": "string" },
+          "commodities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to", "decay"],
+        "properties": {
+          "id": { "type": "string" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "lane": { "type": "string" },
+          "decay": { "type": "number", "minimum": 0, "maximum": 1 },
+          "commodity": { "type": "string" }
+        }
+      }
+    },
+    "markets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "nodes"],
+        "properties": {
+          "id": { "type": "string" },
+          "question": { "type": "string" },
+          "nodes": { "type": "array", "items": { "type": "string" } },
+          "side": { "type": "string", "enum": ["YES", "NO"] }
+        }
+      }
+    }
+  }
+}

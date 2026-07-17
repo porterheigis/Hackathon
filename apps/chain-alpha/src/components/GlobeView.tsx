@@ -276,8 +276,9 @@ export default function GlobeView({
   useEffect(() => {
     const g = globeRef.current;
     if (!g) return;
-    g.controls().autoRotate = stage === "IDLE" && !reducedMotion;
-    g.controls().autoRotateSpeed = 0.3;
+    // Globe stays still unless the user drags it — no auto-rotation ever.
+    g.controls().autoRotate = false;
+    g.controls().autoRotateSpeed = 0;
   }, [stage, reducedMotion]);
 
   // Progressive reveal of propagation during MODEL / SIMULATE.

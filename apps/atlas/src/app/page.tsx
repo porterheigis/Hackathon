@@ -38,6 +38,11 @@ const TacticalView = dynamic(() => import("@/components/TacticalView"), {
   ssr: false,
 });
 
+// Keep absent simulation collections referentially stable. GlobeView observes
+// these arrays in an effect, so allocating a fresh [] during the SIMULATE
+// transition would retrigger that effect after each of its state updates.
+const EMPTY_SIMULATION_LIST: never[] = [];
+
 function CommandCenterInner() {
   const searchParams = useSearchParams();
   const replayParam = searchParams.get("replay") === "1";
@@ -50,7 +55,6 @@ function CommandCenterInner() {
   const [selectedProposals, setSelectedProposals] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [tacticalOverride, setTacticalOverride] = useState(false);
   const [playbackReady, setPlaybackReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("activity");
@@ -60,7 +64,6 @@ function CommandCenterInner() {
   const onPlaybackDone = useCallback(() => {
     setPhase("awaiting_approval");
     setRunning(false);
-    setTacticalOverride(false);
     setPlaybackReady(false);
   }, []);
 
@@ -86,18 +89,15 @@ function CommandCenterInner() {
     return () => clearInterval(id);
   }, []);
 
-  // Tactical cutaway during playback based on timeline events
-  useEffect(() => {
-    if (phase !== "playing" || !timeline) {
-      setTacticalOverride((prev) => (prev ? false : prev));
-      return;
-    }
-    const t = playback.t;
+  // The tactical cutaway is derived from playback rather than mirrored into
+  // state. Updating state from every playback frame causes a nested render
+  // chain in React 19 once the cinematic has run for long enough.
+  const tacticalOverride = useMemo(() => {
+    if (phase !== "playing" || !timeline) return false;
     const cutStart = timeline.events.find((e) => e.kind === "tactical_cutaway");
     const cutEnd = timeline.events.find((e) => e.kind === "tactical_end");
-    if (!cutStart || !cutEnd) return;
-    const next = t >= cutStart.t && t < cutEnd.t;
-    setTacticalOverride((prev) => (prev === next ? prev : next));
+    if (!cutStart || !cutEnd) return false;
+    return playback.t >= cutStart.t && playback.t < cutEnd.t;
   }, [phase, timeline, playback.t]);
 
   const fail = useCallback((message: string, recover: Phase) => {
@@ -105,7 +105,6 @@ function CommandCenterInner() {
     setRunning(false);
     setPhase(recover);
     setPlaybackReady(false);
-    setTacticalOverride(false);
   }, []);
 
   // Auto-run full pipeline in replay mode — still plays shortened cinematic
@@ -168,7 +167,6 @@ function CommandCenterInner() {
     setRunning(false);
     setError(null);
     setPlaybackReady(false);
-    setTacticalOverride(false);
     setDrawerOpen(false);
     playback.reset();
   }, [mode, playback]);
@@ -381,8 +379,10 @@ function CommandCenterInner() {
                 ? state.selectedOutcomes
                 : selectedOutcomes
             }
-            propagationOrder={state.sim?.propagation_order ?? []}
-            tickers={state.sim?.tickers ?? []}
+            propagationOrder={
+              state.sim?.propagation_order ?? EMPTY_SIMULATION_LIST
+            }
+            tickers={state.sim?.tickers ?? EMPTY_SIMULATION_LIST}
             stage={isPlaying ? "SIMULATE" : state.stage}
             eventTitle={state.event?.title ?? null}
             visible={!showTactical}
@@ -394,7 +394,7 @@ function CommandCenterInner() {
             worldModel={worldModel}
             epicenter={state.event?.epicenter_node ?? null}
             stage={isPlaying ? "SIMULATE" : state.stage}
-            detections={state.sim?.detections ?? []}
+            detections={state.sim?.detections ?? EMPTY_SIMULATION_LIST}
             vesselCount={state.sim?.vessel_count ?? 0}
             visible={showTactical}
             eventTitle={state.event?.title ?? null}
@@ -444,15 +444,12 @@ function CommandCenterInner() {
           </div>
         )}
 
-        <div className="opening-panel opening-panel-event">
-          <EventCard event={state.event} phase={phase} onSubmit={handleScreen} />
-        </div>
-        <div className="opening-panel opening-panel-pnl">
-          <PnlCard state={state} onOpen={() => openDrawer("fund")} />
-        </div>
-        <div className="opening-panel opening-panel-dock">
-          <PartnerDock telemetry={state.telemetry} onOpen={() => openDrawer("systems")} />
-        </div>
+        <EventCard event={state.event} phase={phase} onSubmit={handleScreen} />
+        <PnlCard state={state} onOpen={() => openDrawer("fund")} />
+        <PartnerDock
+          telemetry={state.telemetry}
+          onOpen={() => openDrawer("systems")}
+        />
 
           <AnimatePresence>
             {isPlaying && (

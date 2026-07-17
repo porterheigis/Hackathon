@@ -135,7 +135,9 @@ input:focus-visible {
 .opening-chrome {
   animation: atlasChromeReveal 3.3s cubic-bezier(.22, 1, .36, 1) both;
 }
-.opening-panel {
+.event-card,
+.pnl-card,
+.partner-dock {
   animation: atlasPanelReveal 3.3s cubic-bezier(.22, 1, .36, 1) both;
 }
 .globe-layer { position: absolute; inset: 0; z-index: 0; }
@@ -743,7 +745,9 @@ input:focus-visible {
   }
   .opening-sequence { display: none; }
   .opening-chrome,
-  .opening-panel {
+  .event-card,
+  .pnl-card,
+  .partner-dock {
     opacity: 1;
     filter: none;
     animation: none !important;

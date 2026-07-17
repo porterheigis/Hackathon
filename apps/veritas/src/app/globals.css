@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@theme {
+  --color-v-bg: #0c0a07;
+  --color-v-panel: #100e0a;
+  --color-v-hairline: #262117;
+  --color-v-amber: #ffb454;
+  --color-v-amber-dim: #8a6a3a;
+  --color-v-red: #ff5c5c;
+  --color-v-green: #2fd682;
+  --color-v-muted: #7a7466;
+  --color-v-dim: #4a4538;
+  --color-v-text: #d6d0c4;
+  --color-v-bright: #f2ede2;
+  --font-mono: ui-monospace, "SF Mono", "IBM Plex Mono", "Geist Mono", Menlo, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0c0a07;
+  color: #d6d0c4;
+  font-family: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.tape-cursor::after {
+  content: "▋";
+  margin-left: 2px;
+  color: #ffb454;
+  animation: blink 1s step-end infinite;
+}
+
+.fade-in {
+  animation: fadeIn 180ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #262117;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

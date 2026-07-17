@@ -1,0 +1,10 @@
+# VERITAS risk policy — single source of truth for the risk gate.
+#
+# Parsed at runtime by src/lib/risk/gate.ts on every order (edit it live:
+# the next run enforces the new cap). When POMERIUM_MCP_URL is set, the
+# same policy is enforced by Pomerium in front of the execute_trade tool;
+# the local mirror only takes over if Pomerium is unreachable — and says so.
+risk_officer:
+  execute_trade:
+    max_stake_usd: 5.00
+    max_trades_per_run: 1

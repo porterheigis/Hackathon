@@ -437,11 +437,11 @@ export default function GlobeView({
         ref={globeRef}
         width={dims.w}
         height={dims.h}
-        backgroundColor="#0b0b0d"
-        globeImageUrl={BLUE_MARBLE}
-        bumpImageUrl={TOPOLOGY}
-        atmosphereColor="#6eb6ff"
-        atmosphereAltitude={0.15}
+        backgroundColor="#0a0e14"
+        globeImageUrl="/earth-night.jpg"
+        bumpImageUrl="/earth-topology.png"
+        atmosphereColor="#39d3f5"
+        atmosphereAltitude={0.12}
         pointsData={points}
         pointAltitude={0.01}
         pointRadius="size"

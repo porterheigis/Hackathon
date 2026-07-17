@@ -20,41 +20,55 @@ export function loadFixtureEvent(): FixtureEvent {
   return JSON.parse(readFileSync(p, "utf-8")) as FixtureEvent;
 }
 
+/** Survive Next.js HMR / route recompiles in dev */
+type AtlasGlobal = typeof globalThis & {
+  __atlasPositionBook?: PositionEntry[];
+  __atlasSessions?: Map<string, SessionRecord>;
+};
+
+const g = globalThis as AtlasGlobal;
+
 /** In-memory position book (Nexset mirror for local adapter) */
-let positionBook: PositionEntry[] = [];
+function positionBookRef(): PositionEntry[] {
+  if (!g.__atlasPositionBook) g.__atlasPositionBook = [];
+  return g.__atlasPositionBook;
+}
 
 export function getPositionBook(): PositionEntry[] {
-  return [...positionBook];
+  return [...positionBookRef()];
 }
 
 export function appendPosition(entry: PositionEntry): PositionEntry {
-  positionBook = [...positionBook, entry];
+  g.__atlasPositionBook = [...positionBookRef(), entry];
   return entry;
 }
 
 export function resetPositionBook(): void {
-  positionBook = [];
+  g.__atlasPositionBook = [];
 }
 
 /** Scenario session store for multi-phase API flow */
-const sessions = new Map<string, SessionRecord>();
+function sessions(): Map<string, SessionRecord> {
+  if (!g.__atlasSessions) g.__atlasSessions = new Map();
+  return g.__atlasSessions;
+}
 
 export function saveSession(id: string, record: SessionRecord): void {
-  sessions.set(id, record);
+  sessions().set(id, record);
 }
 
 export function getSession(id: string): SessionRecord | undefined {
-  return sessions.get(id);
+  return sessions().get(id);
 }
 
 export function updateSession(
   id: string,
   patch: Partial<SessionRecord>
 ): SessionRecord | undefined {
-  const cur = sessions.get(id);
+  const cur = sessions().get(id);
   if (!cur) return undefined;
   const next = { ...cur, ...patch };
-  sessions.set(id, next);
+  sessions().set(id, next);
   return next;
 }
 

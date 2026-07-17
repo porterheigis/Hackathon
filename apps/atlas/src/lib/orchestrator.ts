@@ -31,6 +31,7 @@ import {
   uid,
   updateSession,
 } from "./store";
+import { buildSimTimeline } from "./timeline";
 import type {
   AffectedOutcome,
   FundState,
@@ -343,7 +344,7 @@ export async function runSimulatePhase(
     );
     await sleep(250);
 
-    const { result: sim, lease } = await runSimulation(matched.event, {
+    const { result: simRaw, lease } = await runSimulation(matched.event, {
       outcome_filter: selected,
       disruption: {
         nodes: matched.epicenter_nodes,
@@ -352,10 +353,20 @@ export async function runSimulatePhase(
       },
     });
 
+    const timeline = buildSimTimeline({
+      sim: simRaw,
+      worldModel: wm,
+      scenario: matched,
+      disruptedEdges,
+      selectedOutcomes: selected,
+      short: Boolean(opts.replay),
+    });
+    const sim = { ...simRaw, timeline };
+
     push(
       {
         sim,
-        viewport: "tactical",
+        viewport: "globe",
         telemetry: {
           ...ctx.state.telemetry,
           akashLeaseId: lease.lease_id,
@@ -367,14 +378,10 @@ export async function runSimulatePhase(
       makeTape(
         "observe",
         "SIMULATE",
-        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"}`
+        `Akash ${lease.source}: ${sim.n_sims} sims · ${sim.elapsed_ms}ms · vessels=${sim.vessel_count ?? "—"} · playback ${Math.round(timeline.duration_ms / 1000)}s`
       )
     );
-    await sleep(600);
-
-    // Pull back to globe for propagation
-    push({ viewport: "globe" });
-    await sleep(400);
+    await sleep(200);
 
     // Filter markets by selected outcomes
     const allowedMarkets = new Set(selectedDefs.flatMap((o) => o.markets));

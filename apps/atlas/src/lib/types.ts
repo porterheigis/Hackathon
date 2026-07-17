@@ -118,6 +118,62 @@ export interface MarketEV {
   edge?: number;
 }
 
+export type TimelinePhaseId = "strike" | "cascade" | "adapt" | "impact";
+
+export type AssetKind = "ship" | "tanker" | "plane" | "military";
+
+export type AssetBehavior = "transit" | "queue" | "reroute" | "deploy";
+
+export interface TimelineWaypoint {
+  lat: number;
+  lng: number;
+  alt?: number;
+}
+
+export interface TimelineAsset {
+  id: string;
+  kind: AssetKind;
+  edge_id?: string;
+  waypoints: TimelineWaypoint[];
+  spawn_t: number;
+  speed: number;
+  behavior: AssetBehavior;
+  label?: string;
+}
+
+export interface TimelinePhase {
+  id: TimelinePhaseId;
+  start: number;
+  end: number;
+  caption: string;
+  sim_day_start: number;
+  sim_day_end: number;
+}
+
+export type TimelineEventKind =
+  | "lane_freeze"
+  | "ticker_pop"
+  | "detection"
+  | "tactical_cutaway"
+  | "tactical_end"
+  | "camera";
+
+export interface TimelineEvent {
+  t: number;
+  kind: TimelineEventKind;
+  payload?: Record<string, unknown>;
+}
+
+export interface SimTimeline {
+  duration_ms: number;
+  sim_days: number;
+  phases: TimelinePhase[];
+  assets: TimelineAsset[];
+  events: TimelineEvent[];
+  epicenter: string;
+  severity: number;
+}
+
 export interface SimResult {
   run_id: string;
   lease_id: string;
@@ -132,6 +188,7 @@ export interface SimResult {
   tickers?: PriceTicker[];
   detections?: DetectionRow[];
   vessel_count?: number;
+  timeline?: SimTimeline;
 }
 
 export interface PriceTicker {

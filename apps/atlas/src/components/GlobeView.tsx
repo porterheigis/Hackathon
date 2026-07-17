@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
-import type { PipelineStage, PriceTicker, WorldModel } from "@/lib/types";
+import { sampleAssetPosition } from "@/lib/timeline";
+import type {
+  PipelineStage,
+  PriceTicker,
+  SimTimeline,
+  TimelineAsset,
+  WorldModel,
+} from "@/lib/types";
 
 interface GlobeViewProps {
   worldModel: WorldModel | null;
@@ -16,6 +23,9 @@ interface GlobeViewProps {
   stage: PipelineStage;
   eventTitle: string | null;
   visible?: boolean;
+  playbackT?: number | null;
+  timeline?: SimTimeline | null;
+  playing?: boolean;
 }
 
 interface ArcDatum {
@@ -56,10 +66,66 @@ interface HtmlDatum {
   delta: number;
 }
 
+interface ObjectDatum {
+  id: string;
+  lat: number;
+  lng: number;
+  alt: number;
+  kind: TimelineAsset["kind"];
+  label: string;
+}
+
 const BLUE_MARBLE =
   "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
 const TOPOLOGY =
   "//unpkg.com/three-globe/example/img/earth-topology.png";
+
+function makeGlyph(kind: TimelineAsset["kind"]): object {
+  // Lazy-require three so Next build doesn't stall on the three graph
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const THREE = require("three") as typeof import("three");
+  let mesh;
+  if (kind === "plane") {
+    mesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.35, 1.2, 4),
+      new THREE.MeshLambertMaterial({
+        color: "#0a84ff",
+        transparent: true,
+        opacity: 0.95,
+      })
+    );
+    mesh.rotation.x = Math.PI / 2;
+  } else if (kind === "military") {
+    mesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.45, 0),
+      new THREE.MeshLambertMaterial({
+        color: "#ff453a",
+        transparent: true,
+        opacity: 0.95,
+      })
+    );
+  } else if (kind === "tanker") {
+    mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.2, 1.1),
+      new THREE.MeshLambertMaterial({
+        color: "#ff9f0a",
+        transparent: true,
+        opacity: 0.95,
+      })
+    );
+  } else {
+    mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.16, 0.85),
+      new THREE.MeshLambertMaterial({
+        color: "#ffffff",
+        transparent: true,
+        opacity: 0.85,
+      })
+    );
+  }
+  mesh.scale.setScalar(0.55);
+  return mesh;
+}
 
 export default function GlobeView({
   worldModel,
@@ -73,11 +139,15 @@ export default function GlobeView({
   stage,
   eventTitle,
   visible = true,
+  playbackT = null,
+  timeline = null,
+  playing = false,
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 600, h: 600 });
   const [propStep, setPropStep] = useState(0);
+  const lastCamMode = useRef<string | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -93,12 +163,13 @@ export default function GlobeView({
   useEffect(() => {
     const g = globeRef.current;
     if (!g) return;
-    g.controls().autoRotate = stage === "IDLE";
+    g.controls().autoRotate = stage === "IDLE" && !playing;
     g.controls().autoRotateSpeed = 0.25;
     g.controls().enableDamping = true;
-  }, [stage]);
+  }, [stage, playing]);
 
   useEffect(() => {
+    if (playing && playbackT != null) return;
     if (stage !== "SIMULATE" && stage !== "MODEL" && stage !== "PROPOSE") {
       setPropStep(propagationOrder.length || affectedNodes.length);
       return;
@@ -112,7 +183,7 @@ export default function GlobeView({
       if (i >= total) clearInterval(id);
     }, 160);
     return () => clearInterval(id);
-  }, [stage, propagationOrder, affectedNodes]);
+  }, [stage, propagationOrder, affectedNodes, playing, playbackT]);
 
   const nodeMap = useMemo(() => {
     const m = new Map<string, { lat: number; lng: number; name: string }>();
@@ -122,20 +193,32 @@ export default function GlobeView({
     return m;
   }, [worldModel]);
 
+  const t = playing && playbackT != null ? playbackT : null;
+
   const visibleNodes = useMemo(() => {
+    if (t != null && timeline) {
+      const order = propagationOrder.length ? propagationOrder : affectedNodes;
+      const n = Math.max(1, Math.floor(t * Math.max(order.length, 1)));
+      return new Set(order.slice(0, n));
+    }
     if (!propagationOrder.length && !affectedNodes.length)
       return new Set<string>();
     const order = propagationOrder.length ? propagationOrder : affectedNodes;
     return new Set(order.slice(0, Math.max(1, propStep)));
-  }, [propagationOrder, affectedNodes, propStep]);
+  }, [propagationOrder, affectedNodes, propStep, t, timeline]);
 
+  const laneFrozen = t != null ? t >= 0.05 : true;
   const wantsAir = selectedOutcomes.includes("air_travel");
   const airThinning =
-    wantsAir && (stage === "SIMULATE" || stage === "PROPOSE" || stage === "AWAITING_APPROVAL");
+    wantsAir &&
+    (playing ||
+      stage === "SIMULATE" ||
+      stage === "PROPOSE" ||
+      stage === "AWAITING_APPROVAL");
 
   const points: PointDatum[] = useMemo(() => {
     if (!worldModel) return [];
-    const base = worldModel.nodes
+    return worldModel.nodes
       .filter(
         (n) =>
           n.type === "chokepoint" || n.type === "port" || n.type === "hub"
@@ -152,29 +235,29 @@ export default function GlobeView({
           label: n.name,
         };
       });
+  }, [worldModel, visibleNodes, epicenter]);
 
-    // Queued tankers near epicenter during sim
-    if (
-      epicenter &&
-      nodeMap.has(epicenter) &&
-      (stage === "SIMULATE" || stage === "PROPOSE" || stage === "AWAITING_APPROVAL")
-    ) {
-      const epi = nodeMap.get(epicenter)!;
-      const count = Math.min(12, 4 + Math.floor(propStep / 2));
-      for (let i = 0; i < count; i++) {
-        const ang = (i / count) * Math.PI * 2;
-        base.push({
-          id: `tanker-${i}`,
-          lat: epi.lat + Math.cos(ang) * 1.2,
-          lng: epi.lng + Math.sin(ang) * 1.2,
-          size: 0.18,
-          color: "#ff453a",
-          label: `Vessel ${i + 1}`,
-        });
-      }
+  const objectsData: ObjectDatum[] = useMemo(() => {
+    if (!timeline || t == null) return [];
+    const out: ObjectDatum[] = [];
+    for (const asset of timeline.assets) {
+      const pos = sampleAssetPosition(asset, t);
+      if (!pos) continue;
+      out.push({
+        id: asset.id,
+        lat: pos.lat,
+        lng: pos.lng,
+        alt: pos.alt ?? (asset.kind === "plane" ? 0.22 : 0.01),
+        kind: asset.kind,
+        label: asset.label ?? asset.kind,
+      });
     }
-    return base;
-  }, [worldModel, visibleNodes, epicenter, stage, propStep, nodeMap]);
+    return out;
+  }, [timeline, t]);
+
+  const objectThreeObject = useCallback((d: object) => {
+    return makeGlyph((d as ObjectDatum).kind);
+  }, []);
 
   const arcs: ArcDatum[] = useMemo(() => {
     if (!worldModel) return [];
@@ -189,14 +272,25 @@ export default function GlobeView({
           (affectedEdges.includes(e.id) || disrupted) &&
           (visibleNodes.has(e.from) || visibleNodes.has(e.to) || disrupted);
         const traffic = e.traffic ?? 0.5;
-        const frozen = disrupted && hot;
+        const frozen = disrupted && hot && laneFrozen;
+        const showReroute =
+          playing && t != null && t >= 0.44 && disrupted && hot;
 
-        let color: string[] = ["rgba(255,255,255,0.08)", "rgba(255,255,255,0.08)"];
+        let color: string[] = [
+          "rgba(255,255,255,0.08)",
+          "rgba(255,255,255,0.08)",
+        ];
         let stroke = isAir ? 0.25 : 0.35;
-        let dashTime = stage === "IDLE" ? 0 : isAir ? 1800 : 2800;
-        const altitude = isAir ? 0.25 : 0.12;
+        let dashTime =
+          stage === "IDLE" && !playing ? 0 : isAir ? 1800 : 2800;
+        let altitude = isAir ? 0.25 : 0.12;
 
-        if (hot) {
+        if (showReroute) {
+          altitude = isAir ? 0.35 : 0.22;
+          color = ["rgba(48,209,88,0.35)", "rgba(48,209,88,0.7)"];
+          stroke = 0.9;
+          dashTime = 2200;
+        } else if (hot) {
           if (isAir && airThinning) {
             color = ["rgba(10,132,255,0.15)", "rgba(10,132,255,0.35)"];
             stroke = 0.15;
@@ -236,12 +330,17 @@ export default function GlobeView({
     visibleNodes,
     stage,
     airThinning,
+    laneFrozen,
+    playing,
+    t,
   ]);
 
   const rings: RingDatum[] = useMemo(() => {
     if (!epicenter || !nodeMap.has(epicenter)) return [];
-    if (stage === "IDLE") return [];
+    if (stage === "IDLE" && !playing) return [];
     const n = nodeMap.get(epicenter)!;
+    const active = playing ? (t ?? 0) < 0.5 : true;
+    if (!active && playing) return [];
     return [
       {
         lat: n.lat,
@@ -251,10 +350,22 @@ export default function GlobeView({
         repeatPeriod: 1400,
       },
     ];
-  }, [epicenter, nodeMap, stage]);
+  }, [epicenter, nodeMap, stage, playing, t]);
 
   const htmlEls: HtmlDatum[] = useMemo(() => {
     if (!tickers.length) return [];
+    if (playing && t != null) {
+      const count = Math.max(
+        0,
+        Math.floor(((t - 0.72) / 0.28) * tickers.length)
+      );
+      return tickers.slice(0, Math.max(0, count)).map((tk) => ({
+        lat: tk.lat,
+        lng: tk.lng,
+        label: tk.label,
+        delta: tk.delta_pct,
+      }));
+    }
     if (
       stage !== "SIMULATE" &&
       stage !== "PROPOSE" &&
@@ -262,26 +373,55 @@ export default function GlobeView({
       stage !== "DONE"
     )
       return [];
-    return tickers.slice(0, Math.max(1, Math.floor(propStep / 2) + 1)).map((t) => ({
-      lat: t.lat,
-      lng: t.lng,
-      label: t.label,
-      delta: t.delta_pct,
-    }));
-  }, [tickers, stage, propStep]);
+    return tickers
+      .slice(0, Math.max(1, Math.floor(propStep / 2) + 1))
+      .map((tk) => ({
+        lat: tk.lat,
+        lng: tk.lng,
+        label: tk.label,
+        delta: tk.delta_pct,
+      }));
+  }, [tickers, stage, propStep, playing, t]);
 
   useEffect(() => {
     if (!epicenter || !nodeMap.has(epicenter) || !globeRef.current) return;
     const n = nodeMap.get(epicenter)!;
-    globeRef.current.pointOfView({ lat: n.lat, lng: n.lng, altitude: 1.6 }, 1600);
-  }, [epicenter, nodeMap]);
+    if (!playing || t == null) {
+      globeRef.current.pointOfView(
+        { lat: n.lat, lng: n.lng, altitude: 1.6 },
+        1600
+      );
+      lastCamMode.current = null;
+      return;
+    }
+    let mode = "strike";
+    let altitude = 1.4;
+    if (t >= 0.78) {
+      mode = "impact";
+      altitude = 2.6;
+    } else if (t >= 0.5) {
+      mode = "adapt";
+      altitude = 2.2;
+    } else if (t >= 0.35) {
+      mode = "cascade";
+      altitude = 1.8;
+    }
+    if (lastCamMode.current !== mode) {
+      lastCamMode.current = mode;
+      const lngOffset = mode === "cascade" ? 12 : mode === "adapt" ? -18 : 0;
+      globeRef.current.pointOfView(
+        { lat: n.lat, lng: n.lng + lngOffset, altitude },
+        1400
+      );
+    }
+  }, [epicenter, nodeMap, playing, t]);
 
   useEffect(() => {
-    if (!globeRef.current) return;
+    if (!globeRef.current || playing) return;
     if (stage === "PROPOSE" || stage === "AWAITING_APPROVAL") {
       globeRef.current.pointOfView({ altitude: 2.1 }, 1800);
     }
-  }, [stage]);
+  }, [stage, playing]);
 
   return (
     <div
@@ -319,6 +459,11 @@ export default function GlobeView({
         ringMaxRadius="maxR"
         ringPropagationSpeed="propagationSpeed"
         ringRepeatPeriod="repeatPeriod"
+        objectsData={objectsData}
+        objectLat="lat"
+        objectLng="lng"
+        objectAltitude="alt"
+        objectThreeObject={objectThreeObject}
         htmlElementsData={htmlEls}
         htmlElement={(d) => {
           const el = document.createElement("div");
@@ -330,10 +475,12 @@ export default function GlobeView({
         }}
         htmlAltitude={0.02}
       />
-      {eventTitle && stage !== "IDLE" && (
+      {eventTitle && stage !== "IDLE" && !playing && (
         <div className="pointer-events-none absolute bottom-4 left-4 right-4">
           <p className="eyebrow">Event</p>
-          <p className="mt-0.5 max-w-lg text-[13px] text-atlas-text">{eventTitle}</p>
+          <p className="mt-0.5 max-w-lg text-[13px] text-atlas-text">
+            {eventTitle}
+          </p>
         </div>
       )}
     </div>
